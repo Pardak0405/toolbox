@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+:root {
+  --paper: #fbfbfc;
+  --fog: #f1f2f4;
+  --ink: #1f2937;
+  --muted: #5b677a;
+  --line: #e3e6ec;
+  --ember: #ef4444;
+  --ember-dark: #b91c1c;
+  --font-display: "Fraunces", "Times New Roman", serif;
+  --font-body: "Sora", "Helvetica", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: radial-gradient(1200px 600px at 10% -10%, #ffffff 0%, #f8f8fa 40%, #f3f4f6 100%);
+  min-height: 100vh;
+}
+
+main {
+  min-height: 60vh;
+}
+
+::selection {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.section-veil {
+  background: var(--fog);
+}
+
+.card-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.tool-card {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 1.1rem;
+  padding: 1.4rem;
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+
+.tool-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+}
+
+.dropzone {
+  border: 2px dashed var(--line);
+  border-radius: 1.2rem;
+  padding: 2.5rem;
+  background: #fff;
+  text-align: center;
+  transition: border-color 160ms ease, background 160ms ease;
+}
+
+.dropzone.dragging {
+  border-color: var(--ember);
+  background: #fff5f5;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--ember-dark);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.ghost-link {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.ghost-link:hover {
+  color: var(--ink);
+}
+
+@media (max-width: 768px) {
+  .dropzone {
+    padding: 1.6rem;
+  }
+}
