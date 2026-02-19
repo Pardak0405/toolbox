@@ -1,5 +1,5 @@
 {
-  "name": "docforge-local-engine",
+  "name": "toolbox-local-engine",
   "version": "0.1.0",
   "private": true,
   "type": "module",

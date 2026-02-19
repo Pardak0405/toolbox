@@ -2,6 +2,7 @@ import AdSlot from "@/app/_components/AdSlot";
 import HomeToolExplorer from "@/app/_components/HomeToolExplorer";
 import ToolGrid from "@/app/_components/ToolGrid";
 import { allTools, categories } from "@/tools/registry";
+import { BRAND } from "@/config/brand";
 
 export default function HomePage() {
   return (
@@ -11,7 +12,7 @@ export default function HomePage() {
           <div className="max-w-xl">
             <span className="badge">100% free, no install</span>
             <h1 className="mt-4 font-display text-4xl leading-tight md:text-5xl">
-              Your free document toolkit, crafted for busy teams.
+              {BRAND.slogan}
             </h1>
             <p className="mt-4 text-base text-muted">
               Merge, convert, scan, and secure files in a privacy-first browser

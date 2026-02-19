@@ -1,3 +1,5 @@
+import { BRAND } from "@/config/brand";
+
 export default function FaqPage() {
   return (
     <div className="py-10">
@@ -5,7 +7,7 @@ export default function FaqPage() {
         <h1 className="font-display text-3xl">FAQ</h1>
         <div className="mt-4 space-y-3">
           {[
-            "Is DocForge free?",
+            `Is ${BRAND.name} free?`,
             "Do you store my files?",
             "How do I use the local engine?"
           ].map((question) => (

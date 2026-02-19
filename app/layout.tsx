@@ -3,6 +3,7 @@ import { Fraunces, Sora } from "next/font/google";
 import "./globals.css";
 import TopNav from "@/app/_components/TopNav";
 import Footer from "@/app/_components/Footer";
+import { BRAND, getBrandOrigin } from "@/config/brand";
 
 const fraunces = Fraunces({
   subsets: ["latin"],
@@ -17,12 +18,13 @@ const sora = Sora({
 });
 
 export const metadata: Metadata = {
-  title: "DocForge — Free Document Toolkit",
-  description: "A privacy-first document toolkit: merge, split, convert, OCR, and more — right in your browser.",
-  metadataBase: new URL("https://example.local"),
+  title: `${BRAND.name} - 무료 문서 툴킷`,
+  description: BRAND.slogan,
+  metadataBase: new URL(getBrandOrigin()),
+  manifest: "/manifest.webmanifest",
   openGraph: {
-    title: "DocForge — Free Document Toolkit",
-    description: "Work with PDFs, images, and office files without leaving the browser.",
+    title: `${BRAND.name} - 무료 문서 툴킷`,
+    description: BRAND.slogan,
     images: ["/og-placeholder.svg"]
   }
 };
@@ -35,6 +37,18 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${fraunces.variable} ${sora.variable}`}>
       <body>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "WebSite",
+              name: BRAND.name,
+              description: BRAND.slogan,
+              url: getBrandOrigin()
+            })
+          }}
+        />
         <TopNav />
         <main className="px-5 md:px-10 lg:px-16">{children}</main>
         <Footer />

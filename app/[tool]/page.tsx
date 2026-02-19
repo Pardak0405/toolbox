@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import ToolClient from "@/app/[tool]/ToolClient";
-import { allTools, getToolBySlug } from "@/tools/registry";
+import { BRAND, getBrandOrigin } from "@/config/brand";
+import { allTools, getToolBySlug, getToolMetaDescription } from "@/tools/registry";
 
 export default function ToolPage({ params }: { params: { tool: string } }) {
   const tool = getToolBySlug(params.tool);
@@ -22,13 +23,14 @@ export async function generateMetadata({
 }) {
   const tool = getToolBySlug(params.tool);
   if (!tool) return {};
+  const description = getToolMetaDescription(tool);
   return {
-    title: `${tool.title} - DocForge`,
-    description: tool.description,
-    alternates: { canonical: `/${tool.slug}` },
+    title: `${tool.title} - ${BRAND.name}`,
+    description,
+    alternates: { canonical: `${getBrandOrigin()}/${tool.slug}` },
     openGraph: {
-      title: `${tool.title} - DocForge`,
-      description: tool.description,
+      title: `${tool.title} - ${BRAND.name}`,
+      description,
       images: ["/og-placeholder.svg"]
     }
   };

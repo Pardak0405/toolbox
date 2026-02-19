@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { allTools } from "@/tools/registry";
+import { BRAND } from "@/config/brand";
 
-const STORAGE_KEY = "docforge-workflow";
+const STORAGE_KEY = "toolbox-workflow";
 
 function encodeSteps(steps: string[]) {
   const payload = JSON.stringify(steps);
@@ -94,7 +95,7 @@ export default function WorkflowsPage() {
       <section className="rounded-3xl bg-white p-8 shadow-soft">
         <h1 className="font-display text-3xl">Workflows</h1>
         <p className="mt-3 text-sm text-muted">
-          툴을 단계별로 묶어 저장하고 공유하세요. 첫 단계 툴로 바로 이동해 실행할 수 있습니다.
+          {BRAND.slogan} 워크플로우를 단계별로 저장하고 공유하세요.
         </p>
         <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
           <div>

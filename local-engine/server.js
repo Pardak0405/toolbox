@@ -11,11 +11,11 @@ const upload = multer({ storage: multer.memoryStorage() });
 
 const PORT = 34781;
 const HOST = "127.0.0.1";
-const allowedOrigins = (process.env.DOCFORGE_ORIGINS || "http://localhost:3000")
+const allowedOrigins = (process.env.TOOLBOX_ORIGINS || "http://localhost:3000")
   .split(",")
   .map((value) => value.trim())
   .filter(Boolean);
-const sessionToken = process.env.DOCFORGE_SESSION_TOKEN || "";
+const sessionToken = process.env.TOOLBOX_SESSION_TOKEN || "";
 
 app.use(
   cors({
@@ -133,7 +133,7 @@ function convertWithSoffice(inputPath, outDir, targetExt) {
 
 app.post("/api/convert", upload.array("files"), async (req, res) => {
   if (!sessionToken) {
-    return res.status(400).send("Set DOCFORGE_SESSION_TOKEN before running.");
+    return res.status(400).send("Set TOOLBOX_SESSION_TOKEN before running.");
   }
   if (req.headers["x-session-token"] !== sessionToken) {
     return res.status(401).send("Invalid session token.");
@@ -157,7 +157,7 @@ app.post("/api/convert", upload.array("files"), async (req, res) => {
     }
   })();
 
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "docforge-"));
+  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-"));
   const inDir = path.join(tempRoot, "in");
   const outDir = path.join(tempRoot, "out");
 

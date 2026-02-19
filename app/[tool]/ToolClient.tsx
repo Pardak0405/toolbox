@@ -8,7 +8,7 @@ import PdfPreview from "@/app/_components/PdfPreview";
 import ProgressModal from "@/app/_components/ProgressModal";
 import ResultPanel from "@/app/_components/ResultPanel";
 import AdSlot from "@/app/_components/AdSlot";
-import { getRecommendations, ToolDefinition } from "@/tools/registry";
+import { getRecommendations, getToolBySlug, ToolDefinition } from "@/tools/registry";
 import { createDownloadUrl } from "@/app/_lib/utils";
 
 const multiTools = new Set([
@@ -30,6 +30,7 @@ export default function ToolClient({ tool }: { tool: ToolDefinition }) {
   const [processing, setProcessing] = useState(false);
   const [localToken, setLocalToken] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [showMoreIntro, setShowMoreIntro] = useState(false);
 
   const accept = useMemo(() => {
     const map: Record<string, string[]> = {};
@@ -61,6 +62,7 @@ export default function ToolClient({ tool }: { tool: ToolDefinition }) {
   }, [tool.inputTypes]);
 
   const recommendations = getRecommendations(tool);
+  const content = tool.content;
   const defaultOptions = useMemo(() => {
     return tool.optionsSchema.reduce<Record<string, unknown>>((acc, field) => {
       if (field.defaultValue !== undefined) acc[field.id] = field.defaultValue;
@@ -243,30 +245,106 @@ export default function ToolClient({ tool }: { tool: ToolDefinition }) {
         </div>
       </section>
 
-      <section className="mt-10 rounded-3xl bg-white p-8">
-        <h2 className="font-display text-2xl">Frequently asked questions</h2>
-        <div className="mt-4 space-y-3">
-          {[
-            `How is ${tool.title} processed?`,
-            `Can I run ${tool.title} offline?`,
-            "What file size limits apply?"
-          ].map((question) => (
-            <details
-              key={question}
-              className="rounded-2xl border border-line bg-fog p-4"
+      {content ? (
+        <section className="mt-10 space-y-6">
+          <article className="rounded-3xl bg-white p-8">
+            <h2 className="font-display text-2xl">이 툴은 무엇을 하나요?</h2>
+            <div className="mt-4 space-y-3 text-sm text-muted">
+              {content.intro
+                .split("\n\n")
+                .filter(Boolean)
+                .slice(0, showMoreIntro ? undefined : 1)
+                .map((paragraph) => (
+                  <p key={paragraph}>{paragraph}</p>
+                ))}
+            </div>
+            <button
+              type="button"
+              className="mt-3 text-xs font-semibold text-ember"
+              onClick={() => setShowMoreIntro((prev) => !prev)}
             >
-              <summary className="cursor-pointer text-sm font-semibold">
-                {question}
-              </summary>
-              <p className="mt-2 text-sm text-muted">
-                Browser mode runs locally in your tab. For larger files, enable
-                the local engine for higher-quality output. Limits depend on
-                device memory and browser settings.
-              </p>
-            </details>
-          ))}
-        </div>
-      </section>
+              {showMoreIntro ? "접기" : "더보기"}
+            </button>
+            <div className="mt-5">
+              <p className="text-sm font-semibold">주요 사용 사례</p>
+              <ul className="mt-2 space-y-2 text-sm text-muted">
+                {content.useCases.map((item) => (
+                  <li key={item}>- {item}</li>
+                ))}
+              </ul>
+            </div>
+          </article>
+
+          <article className="rounded-3xl bg-white p-8">
+            <h2 className="font-display text-2xl">사용 방법</h2>
+            <ol className="mt-4 space-y-2 text-sm text-muted">
+              {content.steps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+          </article>
+
+          <article className="rounded-3xl bg-white p-8">
+            <h2 className="font-display text-2xl">자주 사용하는 옵션 설명</h2>
+            <ul className="mt-4 space-y-2 text-sm text-muted">
+              {content.tips.map((tip) => (
+                <li key={tip}>- {tip}</li>
+              ))}
+            </ul>
+          </article>
+
+          <article className="rounded-3xl bg-white p-8">
+            <h2 className="font-display text-2xl">보안 안내</h2>
+            <p className="mt-4 text-sm text-muted">
+              기본 모드는 브라우저 내부 처리입니다. 고품질 변환, 대용량 문서, 오피스
+              레이아웃 유지가 필요한 경우 로컬 엔진 모드 사용을 권장합니다.
+            </p>
+          </article>
+
+          <article className="rounded-3xl bg-white p-8">
+            <h2 className="font-display text-2xl">FAQ</h2>
+            <div className="mt-4 space-y-3">
+              {content.faq.map((item) => (
+                <details key={item.q} className="rounded-2xl border border-line bg-fog p-4">
+                  <summary className="cursor-pointer text-sm font-semibold">{item.q}</summary>
+                  <p className="mt-2 text-sm text-muted">{item.a}</p>
+                </details>
+              ))}
+            </div>
+          </article>
+
+          <article className="rounded-3xl bg-white p-8">
+            <h2 className="font-display text-2xl">관련 툴</h2>
+            <p className="mt-4 text-xs font-semibold text-muted">같은 카테고리 추천</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {recommendations.map((item) => (
+                <a
+                  key={item.id}
+                  href={`/${item.slug}`}
+                  className="rounded-full border border-line px-3 py-1 text-xs hover:border-ember"
+                >
+                  {item.title}
+                </a>
+              ))}
+            </div>
+            <p className="mt-5 text-xs font-semibold text-muted">관련 작업 추천</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {content.related.map((slug) => {
+                const relatedTool = getToolBySlug(slug);
+                return (
+                  <a
+                    key={slug}
+                    href={`/${slug}`}
+                    className="rounded-full border border-line px-3 py-1 text-xs hover:border-ember"
+                  >
+                    {relatedTool?.title ?? slug}
+                  </a>
+                );
+              })}
+            </div>
+          </article>
+        </section>
+      ) : null}
 
       <ProgressModal
         open={processing}

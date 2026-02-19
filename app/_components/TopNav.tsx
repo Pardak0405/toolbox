@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { categories, toolsRegistry } from "@/tools/registry";
+import { BRAND } from "@/config/brand";
 
 export default function TopNav() {
   const [query, setQuery] = useState("");
@@ -23,11 +24,11 @@ export default function TopNav() {
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <Link href="/" className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-ember text-white flex items-center justify-center font-bold">
-              DF
+              TB
             </div>
             <div>
-              <p className="font-display text-xl">DocForge</p>
-              <p className="text-xs text-muted">Free Document Toolkit</p>
+              <p className="font-display text-xl">{BRAND.name}</p>
+              <p className="text-xs text-muted">{BRAND.slogan}</p>
             </div>
           </Link>
           <div className="relative w-full md:w-[360px]">
