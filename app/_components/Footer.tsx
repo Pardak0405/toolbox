@@ -1,4 +1,4 @@
-\"use client\";
+"use client";
 
 import Link from "next/link";
 import AdSlot from "@/app/_components/AdSlot";

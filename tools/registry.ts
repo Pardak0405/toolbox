@@ -86,6 +86,12 @@ export type ToolDefinition = {
   ) => Promise<ToolResult>;
 };
 
+function bytesToBlob(bytes: Uint8Array, type: string) {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return new Blob([copy], { type });
+}
+
 async function zipBlobs(blobs: Blob[], baseName: string, extension: string) {
   const zip = new JSZip();
   blobs.forEach((blob, index) => {
@@ -129,7 +135,7 @@ async function createNoticePdf(title: string, detail: string) {
     font,
     color: rgb(0.3, 0.3, 0.3)
   });
-  return new Blob([await doc.save()], { type: "application/pdf" });
+  return bytesToBlob(await doc.save(), "application/pdf");
 }
 
 const localRunner = async (
@@ -591,7 +597,25 @@ export const toolsRegistry: ToolDefinition[] = [
         index += 1;
         onProgress?.(Math.min(90, index * 20), `Rendering slide ${index}`);
       }
-      const blob = await pptx.write("blob");
+      const output = await pptx.write({ outputType: "blob" });
+      let blob: Blob;
+      if (output instanceof Blob) {
+        blob = output;
+      } else if (output instanceof ArrayBuffer) {
+        blob = new Blob([output], {
+          type: "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        });
+      } else if (output instanceof Uint8Array) {
+        const copy = new Uint8Array(output.byteLength);
+        copy.set(output);
+        blob = new Blob([copy], {
+          type: "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        });
+      } else {
+        blob = new Blob([String(output)], {
+          type: "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        });
+      }
       return { blob, fileName: "slides.pptx" };
     },
     runLocal: (files, options, token) =>
@@ -923,7 +947,7 @@ ${text}`;
         font,
         color: rgb(0.1, 0.1, 0.1)
       });
-      const blob = new Blob([await doc.save()], { type: "application/pdf" });
+      const blob = bytesToBlob(await doc.save(), "application/pdf");
       return { blob, fileName: "translated.pdf" };
     },
     runLocal: (files, options, token) =>

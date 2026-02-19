@@ -1,6 +1,12 @@
 import { PDFDocument, rgb, StandardFonts, degrees } from "pdf-lib";
 import { renderPdfPageToCanvas } from "@/app/_lib/pdfjs";
 
+function bytesToBlob(bytes: Uint8Array, type: string) {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return new Blob([copy], { type });
+}
+
 export async function mergePdf(files: File[]) {
   const merged = await PDFDocument.create();
   for (const file of files) {
@@ -10,7 +16,7 @@ export async function mergePdf(files: File[]) {
     pages.forEach((page) => merged.addPage(page));
   }
   const pdfBytes = await merged.save();
-  return new Blob([pdfBytes], { type: "application/pdf" });
+  return bytesToBlob(pdfBytes, "application/pdf");
 }
 
 export async function splitPdf(file: File) {
@@ -21,7 +27,7 @@ export async function splitPdf(file: File) {
     const out = await PDFDocument.create();
     const [page] = await out.copyPages(doc, [pageIndex]);
     out.addPage(page);
-    outputs.push(new Blob([await out.save()], { type: "application/pdf" }));
+    outputs.push(bytesToBlob(await out.save(), "application/pdf"));
   }
   return outputs;
 }
@@ -35,7 +41,7 @@ export async function removePages(file: File, removeIndices: number[]) {
   const out = await PDFDocument.create();
   const pages = await out.copyPages(doc, kept);
   pages.forEach((page) => out.addPage(page));
-  return new Blob([await out.save()], { type: "application/pdf" });
+  return bytesToBlob(await out.save(), "application/pdf");
 }
 
 export async function extractPages(file: File, extractIndices: number[]) {
@@ -44,14 +50,14 @@ export async function extractPages(file: File, extractIndices: number[]) {
   const out = await PDFDocument.create();
   const pages = await out.copyPages(doc, extractIndices);
   pages.forEach((page) => out.addPage(page));
-  return new Blob([await out.save()], { type: "application/pdf" });
+  return bytesToBlob(await out.save(), "application/pdf");
 }
 
 export async function rotatePdf(file: File, angle: number) {
   const bytes = await file.arrayBuffer();
   const doc = await PDFDocument.load(bytes);
   doc.getPages().forEach((page) => page.setRotation(degrees(angle)));
-  return new Blob([await doc.save()], { type: "application/pdf" });
+  return bytesToBlob(await doc.save(), "application/pdf");
 }
 
 export async function addPageNumbers(file: File, startAt = 1) {
@@ -68,7 +74,7 @@ export async function addPageNumbers(file: File, startAt = 1) {
       color: rgb(0.2, 0.2, 0.2)
     });
   });
-  return new Blob([await doc.save()], { type: "application/pdf" });
+  return bytesToBlob(await doc.save(), "application/pdf");
 }
 
 export async function addWatermark(file: File, text: string) {
@@ -86,7 +92,7 @@ export async function addWatermark(file: File, text: string) {
       rotate: degrees(20)
     });
   });
-  return new Blob([await doc.save()], { type: "application/pdf" });
+  return bytesToBlob(await doc.save(), "application/pdf");
 }
 
 export async function cropPdf(file: File, margin = 24) {
@@ -96,7 +102,7 @@ export async function cropPdf(file: File, margin = 24) {
     const { width, height } = page.getSize();
     page.setCropBox(margin, margin, width - margin * 2, height - margin * 2);
   });
-  return new Blob([await doc.save()], { type: "application/pdf" });
+  return bytesToBlob(await doc.save(), "application/pdf");
 }
 
 export async function imagesToPdf(files: File[]) {
@@ -110,7 +116,7 @@ export async function imagesToPdf(files: File[]) {
     const page = doc.addPage([image.width, image.height]);
     page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
   }
-  return new Blob([await doc.save()], { type: "application/pdf" });
+  return bytesToBlob(await doc.save(), "application/pdf");
 }
 
 export async function pdfToImages(file: File, format: "png" | "jpeg" = "png") {
@@ -150,7 +156,7 @@ export async function redactPdf(file: File, keyword: string) {
       color: rgb(1, 1, 1)
     });
   });
-  return new Blob([await doc.save()], { type: "application/pdf" });
+  return bytesToBlob(await doc.save(), "application/pdf");
 }
 
 export async function annotatePdf(file: File, note: string) {
@@ -174,5 +180,5 @@ export async function annotatePdf(file: File, note: string) {
       color: rgb(0.2, 0.2, 0.2)
     });
   });
-  return new Blob([await doc.save()], { type: "application/pdf" });
+  return bytesToBlob(await doc.save(), "application/pdf");
 }

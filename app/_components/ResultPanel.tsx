@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { DownloadCloud, RotateCcw } from "lucide-react";
+import { saveAs } from "file-saver";
 import { ToolDefinition } from "@/tools/registry";
 
 export default function ResultPanel({
@@ -20,13 +21,13 @@ export default function ResultPanel({
       <h3 className="text-lg font-semibold">Your file is ready</h3>
       <p className="text-sm text-muted">Download or run another tool.</p>
       <div className="mt-4 flex flex-wrap gap-3">
-        <a
-          href={downloadUrl}
-          download={fileName}
+        <button
+          type="button"
+          onClick={() => saveAs(downloadUrl, fileName)}
           className="inline-flex items-center gap-2 rounded-full bg-ember px-5 py-2 text-sm font-semibold text-white"
         >
           <DownloadCloud className="h-4 w-4" /> Download
-        </a>
+        </button>
         <button
           onClick={onReset}
           className="inline-flex items-center gap-2 rounded-full border border-line px-5 py-2 text-sm font-semibold"

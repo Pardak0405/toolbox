@@ -1,4 +1,5 @@
 import AdSlot from "@/app/_components/AdSlot";
+import HomeToolExplorer from "@/app/_components/HomeToolExplorer";
 import ToolGrid from "@/app/_components/ToolGrid";
 import { allTools, categories } from "@/tools/registry";
 
@@ -45,6 +46,8 @@ export default function HomePage() {
       <section className="mt-10">
         <AdSlot slotId="TOP" className="min-h-[100px]" />
       </section>
+
+      <HomeToolExplorer />
 
       {categories.map((category) => {
         const tools = allTools.filter((tool) => tool.category === category);
