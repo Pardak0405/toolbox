@@ -3,10 +3,8 @@ import cors from "cors";
 import helmet from "helmet";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
-import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
-import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 
 const app = express();
@@ -16,7 +14,6 @@ const HOST = "127.0.0.1";
 const MAX_FILES = Number(process.env.TOOLBOX_MAX_FILES || 200);
 const MAX_FILE_BYTES = Number(process.env.TOOLBOX_MAX_FILE_BYTES || 1024 * 1024 * 1024);
 const REQUEST_TIMEOUT_MS = Number(process.env.TOOLBOX_TIMEOUT_MS || 120_000);
-const PAIRING_KEY_PATH = path.join(os.homedir(), ".toolbox-local-engine", "pairing.key");
 const TOOL_IDS = new Set([
   "word-to-pdf",
   "powerpoint-to-pdf",
@@ -46,35 +43,6 @@ const upload = multer({
     fields: 20
   }
 });
-
-let pairingKey = "";
-
-async function ensurePairingKey() {
-  if (process.env.TOOLBOX_PAIRING_KEY) {
-    pairingKey = process.env.TOOLBOX_PAIRING_KEY.trim();
-    return pairingKey;
-  }
-  try {
-    const existing = (await fs.readFile(PAIRING_KEY_PATH, "utf8")).trim();
-    if (existing) {
-      pairingKey = existing;
-      return pairingKey;
-    }
-  } catch {
-    // Create a new key below when no file exists.
-  }
-  pairingKey = crypto.randomBytes(32).toString("hex");
-  await fs.mkdir(path.dirname(PAIRING_KEY_PATH), { recursive: true });
-  await fs.writeFile(PAIRING_KEY_PATH, `${pairingKey}\n`, { mode: 0o600 });
-  return pairingKey;
-}
-
-function safeEqual(left, right) {
-  const a = Buffer.from(left || "", "utf8");
-  const b = Buffer.from(right || "", "utf8");
-  if (a.length === 0 || a.length !== b.length) return false;
-  return crypto.timingSafeEqual(a, b);
-}
 
 function hasBinary(bin) {
   const result = spawnSync("bash", ["-lc", `command -v ${bin}`], { stdio: "ignore" });
@@ -213,14 +181,6 @@ function convertWithSoffice(inputPath, outDir, targetExt) {
   return path.join(outDir, `${base}.${targetExt}`);
 }
 
-function requirePairingKey(req, res, next) {
-  const key = String(req.headers["x-toolbox-pairing-key"] || "");
-  if (!safeEqual(key, pairingKey)) {
-    return res.status(401).json({ error: "Invalid pairing key." });
-  }
-  return next();
-}
-
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(
   cors({
@@ -231,7 +191,7 @@ app.use(
       return callback(new Error("Origin not allowed"));
     },
     methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "X-Toolbox-Pairing-Key"],
+    allowedHeaders: ["Content-Type"],
     maxAge: 86400
   })
 );
@@ -254,7 +214,7 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
-app.post("/api/convert", requirePairingKey, upload.array("files"), async (req, res) => {
+app.post("/api/convert", upload.array("files"), async (req, res) => {
   const toolId = String(req.body.toolId || "");
   if (!TOOL_IDS.has(toolId)) {
     return res.status(400).send("Unsupported toolId.");
@@ -382,9 +342,7 @@ app.post("/api/convert", requirePairingKey, upload.array("files"), async (req, r
   }
 });
 
-await ensurePairingKey();
 app.listen(PORT, HOST, () => {
   console.log(`Local engine listening at http://${HOST}:${PORT}`);
   console.log(`Allowed origins: ${allowedOrigins.join(", ")}`);
-  console.log(`Pairing key file: ${PAIRING_KEY_PATH}`);
 });

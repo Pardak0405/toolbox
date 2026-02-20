@@ -10,7 +10,6 @@ import ResultPanel from "@/app/_components/ResultPanel";
 import AdSlot from "@/app/_components/AdSlot";
 import { getRecommendations, getToolBySlug } from "@/tools/registry";
 import { createDownloadUrl } from "@/app/_lib/utils";
-import { getOrCreateLocalSessionToken } from "@/app/_lib/local-engine";
 import { FILE_LIMITS } from "@/config/security";
 import { sanitizeFilename, sanitizeText } from "@/lib/sanitize";
 import { estimatePdfPages, validateFileTypeSize } from "@/lib/validation";
@@ -194,20 +193,16 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
 
     setErrorMessage("");
     setProcessing(true);
-    setProgress(5);
-    setStatus("Preparing local session");
+    setProgress(10);
+    setStatus("Sending files to local engine");
     const controller = new AbortController();
     setAbortController(controller);
 
     try {
-      const localToken = await getOrCreateLocalSessionToken();
-      setProgress(10);
-      setStatus("Sending files to local engine");
       const finalOptions = { ...defaultOptions, ...options };
       const nextResult = await tool.runLocal(
         items.map((item) => item.file),
         finalOptions,
-        localToken,
         { signal: controller.signal }
       );
       if (result?.url) URL.revokeObjectURL(result.url);

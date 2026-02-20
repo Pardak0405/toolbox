@@ -99,7 +99,6 @@ export type ToolDefinition = {
   runLocal?: (
     files: File[],
     options: Record<string, unknown>,
-    token: string,
     context?: { signal?: AbortSignal }
   ) => Promise<ToolResult>;
 };
@@ -160,10 +159,9 @@ const localRunner = async (
   toolId: string,
   files: File[],
   options: Record<string, unknown>,
-  token: string,
   context?: { signal?: AbortSignal }
 ) => {
-  const blob = await callLocalEngine({ toolId, files, options, token, signal: context?.signal });
+  const blob = await callLocalEngine({ toolId, files, options, signal: context?.signal });
   return { blob, fileName: `${toolId}-output.zip` };
 };
 
@@ -346,8 +344,8 @@ export const toolsRegistry: ToolDefinition[] = [
       blob: files[0],
       fileName: "compressed.pdf"
     }),
-    runLocal: (files, options, token) =>
-      localRunner("compress-pdf", files, options, token)
+    runLocal: (files, options) =>
+      localRunner("compress-pdf", files, options)
   },
   {
     id: "repair-pdf",
@@ -364,8 +362,8 @@ export const toolsRegistry: ToolDefinition[] = [
       blob: files[0],
       fileName: "repaired.pdf"
     }),
-    runLocal: (files, options, token) =>
-      localRunner("repair-pdf", files, options, token)
+    runLocal: (files, options) =>
+      localRunner("repair-pdf", files, options)
   },
   {
     id: "ocr-pdf",
@@ -449,8 +447,8 @@ export const toolsRegistry: ToolDefinition[] = [
       ),
       fileName: "browser-converted.pdf"
     }),
-    runLocal: (files, options, token) =>
-      localRunner("word-to-pdf", files, options, token)
+    runLocal: (files, options) =>
+      localRunner("word-to-pdf", files, options)
   },
   {
     id: "powerpoint-to-pdf",
@@ -470,8 +468,8 @@ export const toolsRegistry: ToolDefinition[] = [
       ),
       fileName: "browser-converted.pdf"
     }),
-    runLocal: (files, options, token) =>
-      localRunner("powerpoint-to-pdf", files, options, token)
+    runLocal: (files, options) =>
+      localRunner("powerpoint-to-pdf", files, options)
   },
   {
     id: "excel-to-pdf",
@@ -491,8 +489,8 @@ export const toolsRegistry: ToolDefinition[] = [
       ),
       fileName: "browser-converted.pdf"
     }),
-    runLocal: (files, options, token) =>
-      localRunner("excel-to-pdf", files, options, token)
+    runLocal: (files, options) =>
+      localRunner("excel-to-pdf", files, options)
   },
   {
     id: "html-to-pdf",
@@ -519,8 +517,8 @@ export const toolsRegistry: ToolDefinition[] = [
       ),
       fileName: "browser-html.pdf"
     }),
-    runLocal: (files, options, token) =>
-      localRunner("html-to-pdf", files, options, token)
+    runLocal: (files, options) =>
+      localRunner("html-to-pdf", files, options)
   },
   {
     id: "pdf-to-jpg",
@@ -587,8 +585,8 @@ export const toolsRegistry: ToolDefinition[] = [
       const blob = await Packer.toBlob(doc);
       return { blob, fileName: "extracted.docx" };
     },
-    runLocal: (files, options, token) =>
-      localRunner("pdf-to-word", files, options, token)
+    runLocal: (files, options) =>
+      localRunner("pdf-to-word", files, options)
   },
   {
     id: "pdf-to-powerpoint",
@@ -647,8 +645,8 @@ export const toolsRegistry: ToolDefinition[] = [
       }
       return { blob, fileName: "slides.pptx" };
     },
-    runLocal: (files, options, token) =>
-      localRunner("pdf-to-powerpoint", files, options, token)
+    runLocal: (files, options) =>
+      localRunner("pdf-to-powerpoint", files, options)
   },
   {
     id: "pdf-to-excel",
@@ -671,8 +669,8 @@ export const toolsRegistry: ToolDefinition[] = [
       const blob = new Blob([csv], { type: "text/csv" });
       return { blob, fileName: "tables.csv" };
     },
-    runLocal: (files, options, token) =>
-      localRunner("pdf-to-excel", files, options, token)
+    runLocal: (files, options) =>
+      localRunner("pdf-to-excel", files, options)
   },
   {
     id: "pdf-to-pdfa",
@@ -689,8 +687,8 @@ export const toolsRegistry: ToolDefinition[] = [
       blob: files[0],
       fileName: "archive.pdf"
     }),
-    runLocal: (files, options, token) =>
-      localRunner("pdf-to-pdfa", files, options, token)
+    runLocal: (files, options) =>
+      localRunner("pdf-to-pdfa", files, options)
   },
   {
     id: "rotate-pdf",
@@ -835,8 +833,8 @@ export const toolsRegistry: ToolDefinition[] = [
       blob: files[0],
       fileName: "unlocked.pdf"
     }),
-    runLocal: (files, options, token) =>
-      localRunner("unlock-pdf", files, options, token)
+    runLocal: (files, options) =>
+      localRunner("unlock-pdf", files, options)
   },
   {
     id: "protect-pdf",
@@ -859,8 +857,8 @@ export const toolsRegistry: ToolDefinition[] = [
       blob: files[0],
       fileName: "protected.pdf"
     }),
-    runLocal: (files, options, token) =>
-      localRunner("protect-pdf", files, options, token)
+    runLocal: (files, options) =>
+      localRunner("protect-pdf", files, options)
   },
   {
     id: "sign-pdf",
@@ -979,8 +977,8 @@ ${text}`;
       const blob = bytesToBlob(await doc.save(), "application/pdf");
       return { blob, fileName: "translated.pdf" };
     },
-    runLocal: (files, options, token) =>
-      localRunner("translate-pdf", files, options, token)
+    runLocal: (files, options) =>
+      localRunner("translate-pdf", files, options)
   }
 ];
 
