@@ -3,17 +3,22 @@ import cors from "cors";
 import helmet from "helmet";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
+import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
+import JSZip from "jszip";
+import { PDFDocument } from "pdf-lib";
 import { spawnSync } from "node:child_process";
 
 const app = express();
 
 const PORT = 34781;
 const HOST = "127.0.0.1";
-const MAX_FILES = Number(process.env.TOOLBOX_MAX_FILES || 200);
+const MAX_FILES = Number(process.env.TOOLBOX_MAX_FILES || 20);
 const MAX_FILE_BYTES = Number(process.env.TOOLBOX_MAX_FILE_BYTES || 1024 * 1024 * 1024);
+const PPTX_MAX_BYTES = 200 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = Number(process.env.TOOLBOX_TIMEOUT_MS || 120_000);
+const MAX_CONCURRENT = Number(process.env.TOOLBOX_MAX_CONCURRENT || 2);
 const TOOL_IDS = new Set([
   "word-to-pdf",
   "powerpoint-to-pdf",
@@ -39,10 +44,30 @@ const upload = multer({
   limits: {
     files: MAX_FILES,
     fileSize: MAX_FILE_BYTES,
-    fieldSize: 32 * 1024,
-    fields: 20
+    fieldSize: 64 * 1024,
+    fields: 30
   }
 });
+
+let activeJobs = 0;
+const queue = [];
+
+function acquireSlot() {
+  if (activeJobs < MAX_CONCURRENT) {
+    activeJobs += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => queue.push(resolve));
+}
+
+function releaseSlot() {
+  const next = queue.shift();
+  if (next) {
+    next();
+    return;
+  }
+  activeJobs = Math.max(0, activeJobs - 1);
+}
 
 function hasBinary(bin) {
   const result = spawnSync("bash", ["-lc", `command -v ${bin}`], { stdio: "ignore" });
@@ -55,12 +80,27 @@ function runCommand(command, args, options = {}) {
     timeout: REQUEST_TIMEOUT_MS,
     ...options
   });
+  return result;
+}
+
+function ensureCommandSuccess(result, command) {
   if (result.error?.name === "ETIMEDOUT") {
-    throw new Error(`${command} timeout`);
+    throw new Error("timeout");
   }
   if (result.status !== 0) {
-    const stderr = result.stderr || "Unknown command failure";
-    throw new Error(`${command} failed: ${stderr}`);
+    const stderr = String(result.stderr || "").toLowerCase();
+    const stdout = String(result.stdout || "").toLowerCase();
+    const logs = `${stderr}\n${stdout}`;
+    if (logs.includes("password")) {
+      throw new Error("암호화/보호된 파일입니다.");
+    }
+    if (logs.includes("font")) {
+      throw new Error("폰트가 없어 대체 폰트로 변환되었습니다.");
+    }
+    if (logs.includes("corrupt") || logs.includes("damaged")) {
+      throw new Error("손상된 파일이거나 지원되지 않는 형식입니다.");
+    }
+    throw new Error(`${command} failed`);
   }
 }
 
@@ -85,25 +125,6 @@ function normalizeUrl(value) {
   if (protocol !== "http:" && protocol !== "https:") {
     throw new Error("Only http/https URLs are allowed.");
   }
-  const hostname = parsed.hostname.toLowerCase();
-  const ipv4 = hostname.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
-  const isPrivate172 = (() => {
-    if (!ipv4) return false;
-    const first = Number(ipv4[1]);
-    const second = Number(ipv4[2]);
-    return first === 172 && second >= 16 && second <= 31;
-  })();
-
-  if (
-    hostname === "localhost" ||
-    hostname === "127.0.0.1" ||
-    hostname === "::1" ||
-    hostname.startsWith("10.") ||
-    hostname.startsWith("192.168.") ||
-    isPrivate172
-  ) {
-    throw new Error("Local/private network URL is blocked.");
-  }
   return parsed.toString();
 }
 
@@ -116,7 +137,8 @@ async function writeUploadedFiles(files, dir) {
     out.push({
       path: fullPath,
       originalname: file.originalname,
-      mimetype: file.mimetype
+      mimetype: file.mimetype,
+      size: file.size
     });
   }
   return out;
@@ -149,15 +171,9 @@ function ensureNeeds(toolId) {
 function guessMimeByExt(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   if (ext === ".pdf") return "application/pdf";
-  if (ext === ".docx") {
-    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-  }
-  if (ext === ".pptx") {
-    return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
-  }
-  if (ext === ".xlsx") {
-    return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-  }
+  if (ext === ".docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (ext === ".pptx") return "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+  if (ext === ".xlsx") return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
   return "application/octet-stream";
 }
 
@@ -169,25 +185,103 @@ async function sendOutputFile(res, filePath) {
 }
 
 function convertWithSoffice(inputPath, outDir, targetExt) {
-  runCommand("soffice", [
+  const result = runCommand("soffice", [
     "--headless",
+    "--nologo",
+    "--nofirststartwizard",
     "--convert-to",
     targetExt,
     "--outdir",
     outDir,
     inputPath
   ]);
+  ensureCommandSuccess(result, "soffice");
   const base = path.basename(inputPath, path.extname(inputPath));
   return path.join(outDir, `${base}.${targetExt}`);
+}
+
+function compressPdfGhostscript(inputPath, outPath, quality = "balanced") {
+  const profileMap = {
+    high: "/prepress",
+    balanced: "/ebook",
+    small: "/screen"
+  };
+  const pdfSettings = profileMap[quality] || "/ebook";
+  const result = runCommand("gs", [
+    "-sDEVICE=pdfwrite",
+    "-dCompatibilityLevel=1.4",
+    `-dPDFSETTINGS=${pdfSettings}`,
+    "-dNOPAUSE",
+    "-dQUIET",
+    "-dBATCH",
+    `-sOutputFile=${outPath}`,
+    inputPath
+  ]);
+  ensureCommandSuccess(result, "gs");
+}
+
+async function extractPptxSlideMeta(pptxPath) {
+  const buffer = await fs.readFile(pptxPath);
+  const zip = await JSZip.loadAsync(buffer);
+  const names = Object.keys(zip.files);
+  const slideCount = names.filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name)).length;
+  const presentationXml = await zip.file("ppt/presentation.xml")?.async("string");
+  let widthPt = 960;
+  let heightPt = 540;
+  if (presentationXml) {
+    const sizeMatch = presentationXml.match(/(?:p:sldSz|sldSz)[^>]*cx="(\d+)"[^>]*cy="(\d+)"/);
+    if (sizeMatch) {
+      const cx = Number(sizeMatch[1]);
+      const cy = Number(sizeMatch[2]);
+      if (cx > 0 && cy > 0) {
+        widthPt = cx / 12700;
+        heightPt = cy / 12700;
+      }
+    }
+  }
+  return { slideCount, widthPt, heightPt };
+}
+
+async function validateConvertedPdf(pptxPath, pdfPath) {
+  const { slideCount, widthPt, heightPt } = await extractPptxSlideMeta(pptxPath);
+  const pdfBytes = await fs.readFile(pdfPath);
+  const pdfDoc = await PDFDocument.load(pdfBytes);
+  const pdfPages = pdfDoc.getPageCount();
+  if (slideCount > 0 && pdfPages !== slideCount) {
+    return {
+      ok: false,
+      message: `페이지 수 불일치(슬라이드 ${slideCount}, PDF ${pdfPages})`
+    };
+  }
+  const firstPage = pdfDoc.getPage(0);
+  const size = firstPage.getSize();
+  const sourceRatio = widthPt / heightPt;
+  const resultRatio = size.width / size.height;
+  const ratioDiff = Math.abs(sourceRatio - resultRatio);
+  if (ratioDiff > 0.08) {
+    return { ok: false, message: "페이지 크기 비율 검증 실패(슬라이드 비율과 차이 큼)" };
+  }
+  return { ok: true, message: "검증 통과" };
+}
+
+async function convertPptxToPdfLibreOffice(inputPath, outDir, options) {
+  const outputPath = convertWithSoffice(inputPath, outDir, "pdf");
+  const quality = String(options.quality || "high");
+  const compressMode = String(options.compressMode || "none");
+  if (quality === "small" || compressMode !== "none") {
+    const optimized = path.join(outDir, "powerpoint-optimized.pdf");
+    const gsQuality = quality === "small" ? "small" : quality === "high" ? "high" : "balanced";
+    compressPdfGhostscript(outputPath, optimized, gsQuality);
+    return optimized;
+  }
+  return outputPath;
 }
 
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+      if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
       return callback(new Error("Origin not allowed"));
     },
     methods: ["GET", "POST", "OPTIONS"],
@@ -211,36 +305,43 @@ app.use(
 );
 
 app.get("/health", (_req, res) => {
-  res.json({ ok: true });
+  res.json({ ok: true, activeJobs, queuedJobs: queue.length });
 });
 
 app.post("/api/convert", upload.array("files"), async (req, res) => {
-  const toolId = String(req.body.toolId || "");
-  if (!TOOL_IDS.has(toolId)) {
-    return res.status(400).send("Unsupported toolId.");
-  }
-
-  const files = Array.isArray(req.files) ? req.files : [];
-  if (!files.length) {
-    return res.status(400).send("No files provided.");
-  }
-
-  const options = (() => {
-    try {
-      const raw = JSON.parse(String(req.body.options || "{}"));
-      return typeof raw === "object" && raw ? raw : {};
-    } catch {
-      return {};
-    }
-  })();
-
-  const tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-"));
-  const inDir = path.join(tempRoot, "in");
-  const outDir = path.join(tempRoot, "out");
-  await fs.mkdir(inDir, { recursive: true });
-  await fs.mkdir(outDir, { recursive: true });
-
+  await acquireSlot();
+  let tempRoot = "";
   try {
+    const toolId = String(req.body.toolId || "");
+    if (!TOOL_IDS.has(toolId)) {
+      return res.status(400).send("Unsupported toolId.");
+    }
+
+    const files = Array.isArray(req.files) ? req.files : [];
+    if (!files.length) {
+      return res.status(400).send("No files provided.");
+    }
+
+    const options = (() => {
+      try {
+        const raw = JSON.parse(String(req.body.options || "{}"));
+        return typeof raw === "object" && raw ? raw : {};
+      } catch {
+        return {};
+      }
+    })();
+
+    const totalBytes = files.reduce((sum, file) => sum + Number(file.size || 0), 0);
+    if (toolId === "powerpoint-to-pdf" && totalBytes > PPTX_MAX_BYTES) {
+      return res.status(413).send("PPTX size limit exceeded (max 200MB).");
+    }
+
+    tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "toolbox-"));
+    const inDir = path.join(tempRoot, "in");
+    const outDir = path.join(tempRoot, "out");
+    await fs.mkdir(inDir, { recursive: true });
+    await fs.mkdir(outDir, { recursive: true });
+
     ensureNeeds(toolId);
     const uploaded = await writeUploadedFiles(files, inDir);
     const firstInput = uploaded[0]?.path;
@@ -252,10 +353,19 @@ app.post("/api/convert", upload.array("files"), async (req, res) => {
 
     switch (toolId) {
       case "word-to-pdf":
-      case "powerpoint-to-pdf":
       case "excel-to-pdf":
         outputPath = convertWithSoffice(firstInput, outDir, "pdf");
         break;
+      case "powerpoint-to-pdf": {
+        outputPath = await convertPptxToPdfLibreOffice(firstInput, outDir, options);
+        const validation = await validateConvertedPdf(firstInput, outputPath);
+        if (!validation.ok) {
+          return res.status(422).send(
+            `${validation.message}. 브라우저 모드로 다시 시도하거나 High/Balanced 옵션을 바꿔보세요.`
+          );
+        }
+        break;
+      }
       case "pdf-to-word":
         outputPath = convertWithSoffice(firstInput, outDir, "docx");
         break;
@@ -267,25 +377,19 @@ app.post("/api/convert", upload.array("files"), async (req, res) => {
         break;
       case "compress-pdf":
         outputPath = path.join(outDir, "compressed.pdf");
-        runCommand("gs", [
-          "-sDEVICE=pdfwrite",
-          "-dCompatibilityLevel=1.4",
-          "-dPDFSETTINGS=/ebook",
-          "-dNOPAUSE",
-          "-dQUIET",
-          "-dBATCH",
-          `-sOutputFile=${outputPath}`,
-          firstInput
-        ]);
+        compressPdfGhostscript(firstInput, outputPath, "balanced");
         break;
-      case "repair-pdf":
+      case "repair-pdf": {
         outputPath = path.join(outDir, "repaired.pdf");
-        runCommand("qpdf", ["--linearize", firstInput, outputPath]);
+        const result = runCommand("qpdf", ["--linearize", firstInput, outputPath]);
+        ensureCommandSuccess(result, "qpdf");
         break;
+      }
       case "unlock-pdf": {
         outputPath = path.join(outDir, "unlocked.pdf");
         const password = String(options.password || "");
-        runCommand("qpdf", [`--password=${password}`, "--decrypt", firstInput, outputPath]);
+        const result = runCommand("qpdf", [`--password=${password}`, "--decrypt", firstInput, outputPath]);
+        ensureCommandSuccess(result, "qpdf");
         break;
       }
       case "protect-pdf": {
@@ -294,12 +398,13 @@ app.post("/api/convert", upload.array("files"), async (req, res) => {
         if (!password) {
           return res.status(400).send("Missing password option for protect-pdf.");
         }
-        runCommand("qpdf", ["--encrypt", password, password, "256", "--", firstInput, outputPath]);
+        const result = runCommand("qpdf", ["--encrypt", password, password, "256", "--", firstInput, outputPath]);
+        ensureCommandSuccess(result, "qpdf");
         break;
       }
-      case "pdf-to-pdfa":
+      case "pdf-to-pdfa": {
         outputPath = path.join(outDir, "archive-pdfa.pdf");
-        runCommand("gs", [
+        const result = runCommand("gs", [
           "-dPDFA=2",
           "-dBATCH",
           "-dNOPAUSE",
@@ -310,14 +415,16 @@ app.post("/api/convert", upload.array("files"), async (req, res) => {
           `-sOutputFile=${outputPath}`,
           firstInput
         ]);
+        ensureCommandSuccess(result, "gs");
         break;
+      }
       case "html-to-pdf": {
         outputPath = path.join(outDir, "page.pdf");
         const target = normalizeUrl(options.url);
         if (!target) {
           return res.status(400).send("Missing URL option for html-to-pdf.");
         }
-        runCommand("chromium", [
+        const result = runCommand("chromium", [
           "--headless",
           "--disable-gpu",
           "--disable-extensions",
@@ -326,6 +433,7 @@ app.post("/api/convert", upload.array("files"), async (req, res) => {
           `--print-to-pdf=${outputPath}`,
           target
         ]);
+        ensureCommandSuccess(result, "chromium");
         break;
       }
       default:
@@ -338,7 +446,10 @@ app.post("/api/convert", upload.array("files"), async (req, res) => {
     const message = error instanceof Error ? error.message : "Local engine failed.";
     return res.status(500).send(message);
   } finally {
-    await fs.rm(tempRoot, { recursive: true, force: true });
+    if (tempRoot) {
+      await fs.rm(tempRoot, { recursive: true, force: true });
+    }
+    releaseSlot();
   }
 });
 

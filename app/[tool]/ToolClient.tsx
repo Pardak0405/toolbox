@@ -28,13 +28,14 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
   const [options, setOptions] = useState<Record<string, unknown>>({});
   const [progress, setProgress] = useState(0);
   const [status, setStatus] = useState("");
-  const [result, setResult] = useState<{ url: string; name: string } | null>(
+  const [result, setResult] = useState<{ url: string; name: string; blob: Blob } | null>(
     null
   );
   const [processing, setProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [showMoreIntro, setShowMoreIntro] = useState(false);
   const [resourceWarning, setResourceWarning] = useState("");
+  const [modeNotice, setModeNotice] = useState("");
   const [abortController, setAbortController] = useState<AbortController | null>(
     null
   );
@@ -164,20 +165,59 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
 
     try {
       const finalOptions = { ...defaultOptions, ...options };
-      const nextResult = await tool.runBrowser(
-        items.map((item) => item.file),
-        finalOptions,
-        (nextProgress, nextStatus) => {
-          setProgress(nextProgress);
-          setStatus(nextStatus);
-        },
-        { signal: controller.signal }
-      );
+      const isPptToPdf = tool.id === "powerpoint-to-pdf";
+      const selectedMode = String(finalOptions.mode || "local-high");
+      const shouldPreferLocal = isPptToPdf && selectedMode === "local-high" && tool.runLocal;
+      let nextResult;
+
+      if (shouldPreferLocal && tool.runLocal) {
+        setStatus("Running local high-quality conversion");
+        try {
+          nextResult = await tool.runLocal(
+            items.map((item) => item.file),
+            finalOptions,
+            { signal: controller.signal }
+          );
+          setModeNotice("고품질 로컬 엔진 모드로 변환했습니다. 텍스트 선택/레이아웃 보존에 유리합니다.");
+        } catch (localError) {
+          console.error(localError);
+          setStatus("Local mode unavailable. Falling back to browser fast mode");
+          nextResult = await tool.runBrowser(
+            items.map((item) => item.file),
+            finalOptions,
+            (nextProgress, nextStatus) => {
+              setProgress(nextProgress);
+              setStatus(nextStatus);
+            },
+            { signal: controller.signal }
+          );
+          setModeNotice(
+            "브라우저 모드는 일부 폰트/레이아웃이 달라질 수 있습니다. 고품질 변환을 위해 로컬 엔진을 권장합니다."
+          );
+        }
+      } else {
+        nextResult = await tool.runBrowser(
+          items.map((item) => item.file),
+          finalOptions,
+          (nextProgress, nextStatus) => {
+            setProgress(nextProgress);
+            setStatus(nextStatus);
+          },
+          { signal: controller.signal }
+        );
+        if (isPptToPdf) {
+          setModeNotice(
+            "브라우저 모드는 일부 폰트/레이아웃이 달라질 수 있습니다. 고품질 변환을 위해 로컬 엔진을 권장합니다."
+          );
+        } else {
+          setModeNotice("");
+        }
+      }
       if (result?.url) URL.revokeObjectURL(result.url);
       setProgress(100);
       setStatus("Done");
       const url = createDownloadUrl(nextResult.blob);
-      setResult({ url, name: nextResult.fileName });
+      setResult({ url, name: nextResult.fileName, blob: nextResult.blob });
     } catch (error) {
       console.error(error);
       const detail = error instanceof Error ? error.message : "Unknown browser error";
@@ -191,83 +231,8 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
       ];
       const reportBlob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
       const reportUrl = createDownloadUrl(reportBlob);
-      setResult({ url: reportUrl, name: `${tool.slug}-fallback-report.txt` });
+      setResult({ url: reportUrl, name: `${tool.slug}-fallback-report.txt`, blob: reportBlob });
       setErrorMessage(`브라우저 처리 실패: ${detail}`);
-    } finally {
-      setAbortController(null);
-      setProcessing(false);
-    }
-  };
-
-  const processLocal = async () => {
-    if (!tool.runLocal) return;
-    if (items.length === 0) return;
-
-    setErrorMessage("");
-    setProcessing(true);
-    setProgress(10);
-    setStatus("Sending files to local engine");
-    const controller = new AbortController();
-    setAbortController(controller);
-
-    try {
-      const finalOptions = { ...defaultOptions, ...options };
-      const nextResult = await tool.runLocal(
-        items.map((item) => item.file),
-        finalOptions,
-        { signal: controller.signal }
-      );
-      if (result?.url) URL.revokeObjectURL(result.url);
-      setProgress(100);
-      setStatus("Done");
-      const url = createDownloadUrl(nextResult.blob);
-      setResult({ url, name: nextResult.fileName });
-    } catch (error) {
-      console.error(error);
-      if (tool.runBrowser) {
-        try {
-          setProgress(15);
-          setStatus("Local engine unavailable. Switching to browser mode");
-          const finalOptions = { ...defaultOptions, ...options };
-          const fallbackResult = await tool.runBrowser(
-            items.map((item) => item.file),
-            finalOptions,
-            (nextProgress, nextStatus) => {
-              setProgress(nextProgress);
-              setStatus(nextStatus);
-            },
-            { signal: controller.signal }
-          );
-          if (result?.url) URL.revokeObjectURL(result.url);
-          setProgress(100);
-          setStatus("Done");
-          const url = createDownloadUrl(fallbackResult.blob);
-          setResult({ url, name: fallbackResult.fileName });
-          setErrorMessage("로컬 엔진이 없어 브라우저 모드로 자동 전환했습니다.");
-        } catch (fallbackError) {
-          console.error(fallbackError);
-          const detail = fallbackError instanceof Error
-            ? fallbackError.message
-            : "Browser fallback error";
-          const reportBlob = new Blob(
-            [[
-              `[tool] ${tool.title}`,
-              "[status] local-and-browser-failed",
-              `[reason] ${detail}`,
-              "",
-              "Both local and browser mode failed. This report was generated automatically."
-            ].join("\n")],
-            { type: "text/plain;charset=utf-8" }
-          );
-          if (result?.url) URL.revokeObjectURL(result.url);
-          const reportUrl = createDownloadUrl(reportBlob);
-          setResult({ url: reportUrl, name: `${tool.slug}-error-report.txt` });
-          setErrorMessage("로컬/브라우저 처리 모두 실패해 에러 리포트를 생성했습니다.");
-        }
-      } else {
-        const detail = error instanceof Error ? error.message : "Local engine error";
-        setErrorMessage(`로컬 엔진 처리 실패: ${detail}`);
-      }
     } finally {
       setAbortController(null);
       setProcessing(false);
@@ -323,13 +288,18 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
               {resourceWarning}
             </div>
           ) : null}
+          {modeNotice ? (
+            <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+              {modeNotice}
+            </div>
+          ) : null}
           <div className="flex flex-wrap gap-3">
             <button
               onClick={processBrowser}
               disabled={items.length === 0 || processing}
               className="btn-primary rounded-full px-6 py-2 text-sm font-semibold"
             >
-              Run in browser
+              {tool.id === "powerpoint-to-pdf" ? "Convert to PDF" : "Run in browser"}
             </button>
           </div>
           {result ? (
@@ -344,6 +314,14 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
               }}
               recommendations={recommendations}
             />
+          ) : null}
+          {tool.id === "powerpoint-to-pdf" && result && result.blob.type === "application/pdf" ? (
+            <div className="rounded-2xl border border-line bg-white p-4">
+              <p className="text-sm font-semibold">결과 PDF 미리보기 (첫 페이지)</p>
+              <div className="mt-3">
+                <PdfPreview file={new File([result.blob], "preview.pdf", { type: "application/pdf" })} />
+              </div>
+            </div>
           ) : null}
         </div>
       </section>

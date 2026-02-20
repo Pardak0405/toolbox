@@ -204,10 +204,74 @@ async function extractXmlTexts(zip: JSZip, names: string[], tagSelector: string)
 
 async function convertPowerpointToPdfInBrowser(file: File) {
   const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const parser = new DOMParser();
+  const presentationXml = await zip.file("ppt/presentation.xml")?.async("string");
+  let widthPt = 960;
+  let heightPt = 540;
+  if (presentationXml) {
+    const presentationDoc = parser.parseFromString(presentationXml, "text/xml");
+    const slideSize = presentationDoc.querySelector("p\\:sldSz,sldSz");
+    const cx = Number(slideSize?.getAttribute("cx") || "0");
+    const cy = Number(slideSize?.getAttribute("cy") || "0");
+    if (cx > 0 && cy > 0) {
+      widthPt = Math.max(200, Math.min(2000, cx / 12700));
+      heightPt = Math.max(200, Math.min(2000, cy / 12700));
+    }
+  }
+
   const slideNames = sortOfficeEntries(Object.keys(zip.files), "ppt/slides/slide");
-  const lines = await extractXmlTexts(zip, slideNames, "a\\:t,t");
-  const body = lines.length > 0 ? lines : ["No extractable text found in slide XML."];
-  return textPdfFromLines("PowerPoint to PDF (Browser Text Mode)", body);
+  const scale = 1.6;
+  const canvasWidth = Math.round(widthPt * scale);
+  const canvasHeight = Math.round(heightPt * scale);
+  const doc = await PDFDocument.create();
+
+  for (const slideName of slideNames) {
+    const xml = await zip.file(slideName)?.async("string");
+    const slideDoc = parser.parseFromString(xml || "", "text/xml");
+    const textNodes = Array.from(slideDoc.querySelectorAll("a\\:t,t"));
+    const lines = textNodes
+      .map((node) => toWinAnsiSafe(node.textContent || ""))
+      .filter(Boolean)
+      .slice(0, 120);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) continue;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#1f2937";
+    ctx.font = `${Math.max(16, Math.round(canvas.height * 0.04))}px sans-serif`;
+    ctx.textBaseline = "top";
+    let y = Math.round(canvas.height * 0.08);
+    const lineHeight = Math.round(canvas.height * 0.055);
+    for (const line of lines) {
+      if (y > canvas.height - lineHeight) break;
+      ctx.fillText(line.slice(0, 120), Math.round(canvas.width * 0.06), y);
+      y += lineHeight;
+    }
+    if (lines.length === 0) {
+      ctx.fillStyle = "#6b7280";
+      ctx.fillText("No extractable text found on this slide.", Math.round(canvas.width * 0.06), y);
+    }
+
+    const pngBlob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/png")
+    );
+    if (!pngBlob) continue;
+    const pngBytes = await pngBlob.arrayBuffer();
+    const image = await doc.embedPng(pngBytes);
+    const page = doc.addPage([widthPt, heightPt]);
+    page.drawImage(image, { x: 0, y: 0, width: widthPt, height: heightPt });
+  }
+
+  if (doc.getPageCount() === 0) {
+    return textPdfFromLines("PowerPoint to PDF (Browser Fast Mode)", [
+      "No readable slide data found. Try local high-quality mode for better fidelity."
+    ]);
+  }
+  return bytesToBlob(await doc.save(), "application/pdf");
 }
 
 async function convertWordToPdfInBrowser(file: File) {
@@ -601,7 +665,59 @@ export const toolsRegistry: ToolDefinition[] = [
     category: "Convert to PDF",
     inputTypes: ["ppt", "pptx"],
     outputTypes: ["pdf"],
-    optionsSchema: [],
+    optionsSchema: [
+      {
+        id: "mode",
+        label: "변환 모드",
+        type: "select",
+        defaultValue: "local-high",
+        options: [
+          { label: "고품질(텍스트/레이아웃 유지) — 로컬 엔진", value: "local-high" },
+          { label: "빠른 변환(이미지 기반) — 브라우저", value: "browser-fast" }
+        ],
+        help: "고품질 모드: 텍스트 선택 가능 · 슬라이드 크기/배경/도형 유지"
+      },
+      {
+        id: "quality",
+        label: "출력 품질",
+        type: "select",
+        defaultValue: "high",
+        options: [
+          { label: "High", value: "high" },
+          { label: "Balanced", value: "balanced" },
+          { label: "Small file", value: "small" }
+        ]
+      },
+      {
+        id: "fontMode",
+        label: "폰트 처리",
+        type: "select",
+        defaultValue: "embed",
+        options: [
+          { label: "Embed fonts", value: "embed" },
+          { label: "Substitute", value: "substitute" },
+          { label: "Convert text to outlines", value: "outlines" }
+        ]
+      },
+      {
+        id: "compressMode",
+        label: "이미지 압축",
+        type: "select",
+        defaultValue: "none",
+        options: [
+          { label: "none", value: "none" },
+          { label: "low", value: "low" },
+          { label: "medium", value: "medium" },
+          { label: "high", value: "high" }
+        ]
+      },
+      {
+        id: "keepMetadata",
+        label: "메타데이터 유지",
+        type: "checkbox",
+        defaultValue: true
+      }
+    ],
     engine: "hybrid",
     icon: FileType2,
     runBrowser: async (files) => ({
