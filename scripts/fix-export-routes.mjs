@@ -25,6 +25,7 @@ async function run() {
     .map((entry) => entry.name);
 
   let patched = 0;
+  const redirects = [];
   for (const fileName of htmlFiles) {
     const base = fileName.slice(0, -5);
     if (skip.has(base)) continue;
@@ -37,7 +38,15 @@ async function run() {
       await fs.mkdir(routeDir, { recursive: true });
     }
     await fs.copyFile(source, indexFile);
+    redirects.push(`/${base} /${base}/ 308`);
     patched += 1;
+  }
+
+  if (redirects.length > 0) {
+    const redirectsPath = path.join(outDir, "_redirects");
+    const content = `${redirects.join("\n")}\n`;
+    await fs.writeFile(redirectsPath, content, "utf8");
+    console.log(`generated redirects: ${redirects.length}`);
   }
 
   console.log(`patched route index files: ${patched}`);
