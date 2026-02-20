@@ -1,8 +1,8 @@
 export const BRAND = {
   name: "toolbox",
   slogan: "업로드 없이 빠르게, 내 PC에서 처리하는 문서 툴킷",
-  domain: "추후 입력",
-  supportEmail: "support@toolbox.local"
+  domain: "https://toolbox.pgwcoding1.workers.dev",
+  supportEmail: "support@toolbox.pgwcoding1.workers.dev"
 };
 
 export function getBrandOrigin() {

@@ -180,7 +180,19 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
       setResult({ url, name: nextResult.fileName });
     } catch (error) {
       console.error(error);
-      setErrorMessage("브라우저 처리 중 오류가 발생했습니다. 파일 형식과 옵션을 확인해 주세요.");
+      const detail = error instanceof Error ? error.message : "Unknown browser error";
+      const lines = [
+        `[tool] ${tool.title}`,
+        `[status] browser-processing-failed`,
+        `[reason] ${detail}`,
+        "",
+        "The browser fallback report was generated so the task does not stop completely.",
+        "Try smaller files, fewer files per run, or different options."
+      ];
+      const reportBlob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
+      const reportUrl = createDownloadUrl(reportBlob);
+      setResult({ url: reportUrl, name: `${tool.slug}-fallback-report.txt` });
+      setErrorMessage("브라우저 처리에 실패해 fallback 리포트를 생성했습니다.");
     } finally {
       setAbortController(null);
       setProcessing(false);
@@ -212,10 +224,50 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
       setResult({ url, name: nextResult.fileName });
     } catch (error) {
       console.error(error);
-      const detail = error instanceof Error ? error.message : "Local engine error";
-      setErrorMessage(
-        `로컬 엔진 처리 실패: ${detail}. 엔진 실행 상태, origin 설정, 설치 의존성을 확인해 주세요.`
-      );
+      if (tool.runBrowser) {
+        try {
+          setProgress(15);
+          setStatus("Local engine unavailable. Switching to browser mode");
+          const finalOptions = { ...defaultOptions, ...options };
+          const fallbackResult = await tool.runBrowser(
+            items.map((item) => item.file),
+            finalOptions,
+            (nextProgress, nextStatus) => {
+              setProgress(nextProgress);
+              setStatus(nextStatus);
+            },
+            { signal: controller.signal }
+          );
+          if (result?.url) URL.revokeObjectURL(result.url);
+          setProgress(100);
+          setStatus("Done");
+          const url = createDownloadUrl(fallbackResult.blob);
+          setResult({ url, name: fallbackResult.fileName });
+          setErrorMessage("로컬 엔진이 없어 브라우저 모드로 자동 전환했습니다.");
+        } catch (fallbackError) {
+          console.error(fallbackError);
+          const detail = fallbackError instanceof Error
+            ? fallbackError.message
+            : "Browser fallback error";
+          const reportBlob = new Blob(
+            [[
+              `[tool] ${tool.title}`,
+              "[status] local-and-browser-failed",
+              `[reason] ${detail}`,
+              "",
+              "Both local and browser mode failed. This report was generated automatically."
+            ].join("\n")],
+            { type: "text/plain;charset=utf-8" }
+          );
+          if (result?.url) URL.revokeObjectURL(result.url);
+          const reportUrl = createDownloadUrl(reportBlob);
+          setResult({ url: reportUrl, name: `${tool.slug}-error-report.txt` });
+          setErrorMessage("로컬/브라우저 처리 모두 실패해 에러 리포트를 생성했습니다.");
+        }
+      } else {
+        const detail = error instanceof Error ? error.message : "Local engine error";
+        setErrorMessage(`로컬 엔진 처리 실패: ${detail}`);
+      }
     } finally {
       setAbortController(null);
       setProcessing(false);
@@ -236,7 +288,7 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
             multiple={multiTools.has(tool.id)}
             capture={tool.id === "scan-to-pdf" ? "environment" : undefined}
             onFiles={handleFiles}
-            helper="기본적으로 파일은 브라우저에서만 처리됩니다. 로컬 엔진 사용 시에만 전송됩니다."
+            helper="로컬 엔진 없이도 브라우저에서 처리됩니다. 실패 시 자동으로 fallback 리포트를 생성합니다."
           />
         </div>
       </section>
@@ -279,15 +331,6 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
             >
               Run in browser
             </button>
-            {tool.runLocal ? (
-              <button
-                onClick={processLocal}
-                disabled={items.length === 0 || processing}
-                className="rounded-full border border-line px-6 py-2 text-sm font-semibold disabled:opacity-50"
-              >
-                Run local engine
-              </button>
-            ) : null}
           </div>
           {result ? (
             <ResultPanel

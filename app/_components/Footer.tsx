@@ -16,6 +16,7 @@ export default function Footer() {
         </div>
         <div className="flex flex-wrap gap-4 text-sm">
           <Link className="ghost-link" href="/about">About</Link>
+          <Link className="ghost-link" href="/editorial-policy">Editorial Policy</Link>
           <Link className="ghost-link" href="/privacy">Privacy</Link>
           <Link className="ghost-link" href="/terms">Terms</Link>
           <Link className="ghost-link" href="/faq">FAQ</Link>
@@ -28,6 +29,9 @@ export default function Footer() {
       <p className="mt-6 text-xs text-muted">
         Ads appear only in non-intrusive slots. Processing happens in your
         browser unless you opt into the local engine.
+      </p>
+      <p className="mt-2 text-xs text-muted">
+        Last updated: 2026-02-20
       </p>
     </footer>
   );

@@ -16,6 +16,9 @@ export default function AdSlot({
   const slot = slotMap[slotId];
 
   if (!client || !slot) {
+    if (process.env.NODE_ENV === "production") {
+      return null;
+    }
     return (
       <div
         className={`rounded-xl border border-dashed border-line bg-fog p-4 text-center text-xs text-muted ${
