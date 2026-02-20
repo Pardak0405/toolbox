@@ -13,9 +13,18 @@ export function validateFileTypeSize(
 
   if (allowedTypes.length > 0) {
     const ext = file.name.toLowerCase().split(".").pop() || "";
-    const extAllowed = allowedTypes.some((type) => type.toLowerCase() === ext);
+    const set = new Set(allowedTypes.map((type) => type.toLowerCase()));
+    const mime = String(file.type || "").toLowerCase();
+    const isImageLike =
+      set.has("image") ||
+      set.has("jpg") ||
+      set.has("jpeg") ||
+      set.has("png");
+    const extAllowed =
+      set.has(ext) ||
+      (isImageLike && (mime.startsWith("image/") || ["jpg", "jpeg", "png", "webp"].includes(ext)));
     if (!extAllowed) {
-      return { ok: false, reason: `Unsupported extension: .${ext}` };
+      return { ok: false, reason: `Unsupported file type: .${ext || "unknown"}` };
     }
   }
 

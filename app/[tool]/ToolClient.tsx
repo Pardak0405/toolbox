@@ -192,7 +192,7 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
       const reportBlob = new Blob([lines.join("\n")], { type: "text/plain;charset=utf-8" });
       const reportUrl = createDownloadUrl(reportBlob);
       setResult({ url: reportUrl, name: `${tool.slug}-fallback-report.txt` });
-      setErrorMessage("브라우저 처리에 실패해 fallback 리포트를 생성했습니다.");
+      setErrorMessage(`브라우저 처리 실패: ${detail}`);
     } finally {
       setAbortController(null);
       setProcessing(false);
@@ -327,7 +327,7 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
             <button
               onClick={processBrowser}
               disabled={items.length === 0 || processing}
-              className="rounded-full bg-ember px-6 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              className="rounded-full bg-emberDark px-6 py-2 text-sm font-semibold text-white disabled:opacity-50"
             >
               Run in browser
             </button>
