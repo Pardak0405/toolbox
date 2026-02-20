@@ -4,6 +4,7 @@ import Link from "next/link";
 import { DownloadCloud, RotateCcw } from "lucide-react";
 import { saveAs } from "file-saver";
 import { ToolDefinition } from "@/tools/registry";
+import { sanitizeFilename } from "@/lib/sanitize";
 
 export default function ResultPanel({
   fileName,
@@ -16,6 +17,8 @@ export default function ResultPanel({
   onReset: () => void;
   recommendations: ToolDefinition[];
 }) {
+  const safeFileName = sanitizeFilename(fileName);
+
   return (
     <div className="rounded-2xl border border-line bg-white p-6">
       <h3 className="text-lg font-semibold">Your file is ready</h3>
@@ -23,7 +26,7 @@ export default function ResultPanel({
       <div className="mt-4 flex flex-wrap gap-3">
         <button
           type="button"
-          onClick={() => saveAs(downloadUrl, fileName)}
+          onClick={() => saveAs(downloadUrl, safeFileName)}
           className="inline-flex items-center gap-2 rounded-full bg-ember px-5 py-2 text-sm font-semibold text-white"
         >
           <DownloadCloud className="h-4 w-4" /> Download

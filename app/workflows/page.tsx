@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { allTools } from "@/tools/registry";
 import { BRAND } from "@/config/brand";
+import { sanitizeText } from "@/lib/sanitize";
+import {
+  validateToolOptionsWithZod,
+  workflowQuerySchema
+} from "@/lib/validation";
 
 const STORAGE_KEY = "toolbox-workflow";
 
@@ -16,10 +21,11 @@ function decodeSteps(value: string) {
   try {
     const decoded = decodeURIComponent(escape(atob(value)));
     const parsed = JSON.parse(decoded);
-    if (Array.isArray(parsed)) {
-      return parsed.filter((item) => typeof item === "string");
-    }
-    return [];
+    const validated = validateToolOptionsWithZod(workflowQuerySchema, {
+      steps: parsed
+    });
+    if (!validated.ok) return [];
+    return validated.data.steps;
   } catch {
     return [];
   }
@@ -34,11 +40,21 @@ export default function WorkflowsPage() {
   useEffect(() => {
     setOrigin(window.location.origin);
     const params = new URLSearchParams(window.location.search);
-    const sharedName = params.get("name");
-    if (sharedName) setName(sharedName);
+    const rawName = params.get("name");
     const encoded = params.get("steps");
-    if (encoded) {
-      setSteps(decodeSteps(encoded));
+    if (rawName || encoded) {
+      const steps = encoded ? decodeSteps(encoded) : [];
+      const validated = validateToolOptionsWithZod(workflowQuerySchema, {
+        name: rawName ?? undefined,
+        steps
+      });
+      if (validated.ok) {
+        if (validated.data.name) setName(validated.data.name);
+        setSteps(validated.data.steps);
+      } else {
+        setName("My workflow");
+        setSteps([]);
+      }
       return;
     }
 
@@ -46,7 +62,7 @@ export default function WorkflowsPage() {
     if (!saved) return;
     try {
       const parsed = JSON.parse(saved) as { name?: string; steps?: string[] };
-      if (parsed.name) setName(parsed.name);
+      if (parsed.name) setName(sanitizeText(parsed.name, 80));
       if (Array.isArray(parsed.steps)) setSteps(parsed.steps);
     } catch {
       // Ignore invalid local storage payloads.
@@ -77,7 +93,10 @@ export default function WorkflowsPage() {
   };
 
   const saveWorkflow = () => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ name, steps }));
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ name: sanitizeText(name, 80), steps })
+    );
     setMessage("워크플로우가 브라우저에 저장되었습니다.");
   };
 
@@ -102,7 +121,7 @@ export default function WorkflowsPage() {
             <label className="text-sm font-semibold">Workflow name</label>
             <input
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => setName(sanitizeText(event.target.value, 80))}
               className="mt-2 w-full rounded-lg border border-line px-3 py-2 text-sm"
             />
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">

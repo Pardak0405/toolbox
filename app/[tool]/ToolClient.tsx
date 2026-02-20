@@ -11,6 +11,9 @@ import AdSlot from "@/app/_components/AdSlot";
 import { getRecommendations, getToolBySlug } from "@/tools/registry";
 import { createDownloadUrl } from "@/app/_lib/utils";
 import { getOrCreateLocalSessionToken } from "@/app/_lib/local-engine";
+import { FILE_LIMITS } from "@/config/security";
+import { sanitizeFilename, sanitizeText } from "@/lib/sanitize";
+import { estimatePdfPages, validateFileTypeSize } from "@/lib/validation";
 
 const multiTools = new Set([
   "merge-pdf",
@@ -21,7 +24,7 @@ const multiTools = new Set([
 ]);
 
 export default function ToolClient({ toolSlug }: { toolSlug: string }) {
-  const tool = getToolBySlug(toolSlug);
+  const resolvedTool = getToolBySlug(toolSlug);
   const [items, setItems] = useState<FileQueueItem[]>([]);
   const [options, setOptions] = useState<Record<string, unknown>>({});
   const [progress, setProgress] = useState(0);
@@ -32,17 +35,13 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
   const [processing, setProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [showMoreIntro, setShowMoreIntro] = useState(false);
+  const [resourceWarning, setResourceWarning] = useState("");
+  const [abortController, setAbortController] = useState<AbortController | null>(
+    null
+  );
 
-  if (!tool) {
-    return (
-      <div className="py-10">
-        <section className="rounded-3xl bg-white p-8 shadow-soft">
-          <h1 className="font-display text-2xl">Tool not found</h1>
-          <p className="mt-2 text-sm text-muted">Please return to home and pick a valid tool.</p>
-        </section>
-      </div>
-    );
-  }
+  if (!resolvedTool) throw new Error("Tool not found.");
+  const tool = resolvedTool;
 
   const accept = useMemo(() => {
     const map: Record<string, string[]> = {};
@@ -90,12 +89,68 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
 
   const handleFiles = (files: File[]) => {
     setErrorMessage("");
-    const nextItems = files.map((file) => ({
-      id: `${file.name}-${crypto.randomUUID()}`,
-      file
-    }));
-    setItems((prev) => (multiTools.has(tool.id) ? [...prev, ...nextItems] : nextItems));
+    const allowed = tool.inputTypes.map((type) => type.toLowerCase());
+    const accepted: FileQueueItem[] = [];
+    const rejected: string[] = [];
+
+    for (const file of files.slice(0, FILE_LIMITS.maxFilesPerRun)) {
+      const checked = validateFileTypeSize(file, allowed, FILE_LIMITS.defaultHardBytes);
+      if (!checked.ok) {
+        rejected.push(`${sanitizeText(file.name, 60)}: ${checked.reason}`);
+        continue;
+      }
+      const safeName = sanitizeFilename(file.name);
+      const normalized = new File([file], safeName, { type: file.type });
+      accepted.push({
+        id: `${safeName}-${crypto.randomUUID()}`,
+        file: normalized
+      });
+    }
+
+    if (rejected.length > 0) {
+      setErrorMessage(rejected.slice(0, 2).join(" / "));
+    }
+    setItems((prev) => (multiTools.has(tool.id) ? [...prev, ...accepted] : accepted));
   };
+
+  useEffect(() => {
+    let mounted = true;
+    async function evaluateResourceWarning() {
+      if (items.length === 0) {
+        setResourceWarning("");
+        return;
+      }
+      const totalSize = items.reduce((sum, item) => sum + item.file.size, 0);
+      if (totalSize > FILE_LIMITS.defaultSoftBytes * 2) {
+        if (mounted) {
+          setResourceWarning("파일 용량이 커서 처리 시간이 길어질 수 있습니다. 파일 분할을 권장합니다.");
+        }
+      }
+      if (tool.inputTypes.includes("pdf")) {
+        try {
+          const pages = await estimatePdfPages(items[0].file);
+          if (!mounted) return;
+          if (pages > FILE_LIMITS.maxPdfPagesHard) {
+            setResourceWarning(
+              `PDF 페이지가 ${pages}장으로 많습니다. 일부 브라우저 환경에서 실패할 수 있습니다.`
+            );
+          } else if (pages > FILE_LIMITS.maxPdfPagesForOcr) {
+            setResourceWarning(
+              `페이지 수가 ${pages}장입니다. OCR/렌더 작업은 시간이 오래 걸릴 수 있습니다.`
+            );
+          } else {
+            setResourceWarning("");
+          }
+        } catch {
+          // Ignore page estimation failures.
+        }
+      }
+    }
+    evaluateResourceWarning();
+    return () => {
+      mounted = false;
+    };
+  }, [items, tool.inputTypes]);
 
   const processBrowser = async () => {
     if (!tool.runBrowser) return;
@@ -105,6 +160,8 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
     setProcessing(true);
     setProgress(10);
     setStatus("Preparing files");
+    const controller = new AbortController();
+    setAbortController(controller);
 
     try {
       const finalOptions = { ...defaultOptions, ...options };
@@ -114,7 +171,8 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
         (nextProgress, nextStatus) => {
           setProgress(nextProgress);
           setStatus(nextStatus);
-        }
+        },
+        { signal: controller.signal }
       );
       if (result?.url) URL.revokeObjectURL(result.url);
       setProgress(100);
@@ -125,6 +183,7 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
       console.error(error);
       setErrorMessage("브라우저 처리 중 오류가 발생했습니다. 파일 형식과 옵션을 확인해 주세요.");
     } finally {
+      setAbortController(null);
       setProcessing(false);
     }
   };
@@ -137,6 +196,8 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
     setProcessing(true);
     setProgress(5);
     setStatus("Preparing local session");
+    const controller = new AbortController();
+    setAbortController(controller);
 
     try {
       const localToken = await getOrCreateLocalSessionToken();
@@ -146,7 +207,8 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
       const nextResult = await tool.runLocal(
         items.map((item) => item.file),
         finalOptions,
-        localToken
+        localToken,
+        { signal: controller.signal }
       );
       if (result?.url) URL.revokeObjectURL(result.url);
       setProgress(100);
@@ -160,6 +222,7 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
         `로컬 엔진 처리 실패: ${detail}. 엔진 실행 상태, origin 설정, 설치 의존성을 확인해 주세요.`
       );
     } finally {
+      setAbortController(null);
       setProcessing(false);
     }
   };
@@ -206,6 +269,11 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
           {errorMessage ? (
             <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {errorMessage}
+            </div>
+          ) : null}
+          {resourceWarning ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              {resourceWarning}
             </div>
           ) : null}
           <div className="flex flex-wrap gap-3">
@@ -347,7 +415,10 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
         open={processing}
         progress={progress}
         status={status}
-        onCancel={() => setProcessing(false)}
+        onCancel={() => {
+          abortController?.abort();
+          setProcessing(false);
+        }}
       />
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { ToolOptionField } from "@/tools/registry";
+import { sanitizeText } from "@/lib/sanitize";
 
 export default function OptionsPanel({
   schema,
@@ -85,7 +86,7 @@ export default function OptionsPanel({
                     className="mt-2 h-10 w-full rounded-lg border border-line"
                     value={String(value)}
                     onChange={(event) =>
-                      onChange({ ...options, [field.id]: event.target.value })
+                      onChange({ ...options, [field.id]: sanitizeText(event.target.value, 160) })
                     }
                   />
                 </label>
@@ -100,7 +101,10 @@ export default function OptionsPanel({
                     placeholder={field.placeholder}
                     value={String(value ?? "")}
                     onChange={(event) =>
-                      onChange({ ...options, [field.id]: event.target.value })
+                      onChange({
+                        ...options,
+                        [field.id]: sanitizeText(event.target.value, 500)
+                      })
                     }
                   />
                   {field.help ? (

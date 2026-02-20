@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Fraunces, Sora } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import TopNav from "@/app/_components/TopNav";
 import Footer from "@/app/_components/Footer";
@@ -34,21 +35,20 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const websiteJsonLd = JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: BRAND.name,
+    description: BRAND.slogan,
+    url: getBrandOrigin()
+  });
+
   return (
     <html lang="en" className={`${fraunces.variable} ${sora.variable}`}>
       <body>
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "WebSite",
-              name: BRAND.name,
-              description: BRAND.slogan,
-              url: getBrandOrigin()
-            })
-          }}
-        />
+        <Script id="website-jsonld" type="application/ld+json" strategy="afterInteractive">
+          {websiteJsonLd}
+        </Script>
         <TopNav />
         <main className="px-5 md:px-10 lg:px-16">{children}</main>
         <Footer />

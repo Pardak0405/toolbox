@@ -3,6 +3,58 @@ import path from "node:path";
 
 const outDir = path.join(process.cwd(), "out");
 const skip = new Set(["index", "404", "_not-found"]);
+const isDev = process.env.NODE_ENV !== "production";
+
+function buildCsp() {
+  const adScript = [
+    "https://pagead2.googlesyndication.com",
+    "https://googleads.g.doubleclick.net",
+    "https://tpc.googlesyndication.com"
+  ];
+  const adConnect = [
+    "https://pagead2.googlesyndication.com",
+    "https://googleads.g.doubleclick.net",
+    "https://ep1.adtrafficquality.google"
+  ];
+  const scriptSrc = [
+    "'self'",
+    ...adScript,
+    ...(isDev ? ["'unsafe-eval'", "'unsafe-inline'"] : [])
+  ].join(" ");
+  return [
+    "default-src 'self'",
+    `script-src ${scriptSrc}`,
+    "style-src 'self' 'unsafe-inline'",
+    `img-src 'self' blob: data: ${adScript.join(" ")}`,
+    `connect-src 'self' http://127.0.0.1:34781 ${adConnect.join(" ")}`,
+    "font-src 'self' data:",
+    `frame-src 'self' ${adScript.join(" ")}`,
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+    "upgrade-insecure-requests"
+  ].join("; ");
+}
+
+function buildHeadersFile() {
+  const lines = [
+    "/*",
+    `  Content-Security-Policy: ${buildCsp()}`,
+    "  X-Content-Type-Options: nosniff",
+    "  Referrer-Policy: strict-origin-when-cross-origin",
+    "  Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=(), usb=()",
+    "  X-Frame-Options: DENY",
+    "  Cross-Origin-Opener-Policy: same-origin",
+    "  Cross-Origin-Resource-Policy: same-site",
+    "  Cross-Origin-Embedder-Policy: unsafe-none"
+  ];
+
+  if (!isDev) {
+    lines.push("  Strict-Transport-Security: max-age=31536000; includeSubDomains; preload");
+  }
+  return `${lines.join("\n")}\n`;
+}
 
 async function exists(targetPath) {
   try {
@@ -48,6 +100,10 @@ async function run() {
     await fs.writeFile(redirectsPath, content, "utf8");
     console.log(`generated redirects: ${redirects.length}`);
   }
+
+  const headersPath = path.join(outDir, "_headers");
+  await fs.writeFile(headersPath, buildHeadersFile(), "utf8");
+  console.log("generated headers: 1");
 
   console.log(`patched route index files: ${patched}`);
 }

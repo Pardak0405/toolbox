@@ -42,6 +42,7 @@ import { extractPdfText, renderPdfPageToCanvas } from "@/app/_lib/pdfjs";
 import { diffCanvases } from "@/app/_lib/compare";
 import { runOcrOnCanvas } from "@/app/_lib/ocr";
 import { callLocalEngine } from "@/app/_lib/local-engine";
+import { FILE_LIMITS } from "@/config/security";
 
 export type ToolEngine = "browser" | "local" | "hybrid";
 
@@ -92,12 +93,14 @@ export type ToolDefinition = {
   runBrowser?: (
     files: File[],
     options: Record<string, unknown>,
-    onProgress?: (progress: number, status: string) => void
+    onProgress?: (progress: number, status: string) => void,
+    context?: { signal?: AbortSignal }
   ) => Promise<ToolResult>;
   runLocal?: (
     files: File[],
     options: Record<string, unknown>,
-    token: string
+    token: string,
+    context?: { signal?: AbortSignal }
   ) => Promise<ToolResult>;
 };
 
@@ -157,9 +160,10 @@ const localRunner = async (
   toolId: string,
   files: File[],
   options: Record<string, unknown>,
-  token: string
+  token: string,
+  context?: { signal?: AbortSignal }
 ) => {
-  const blob = await callLocalEngine({ toolId, files, options, token });
+  const blob = await callLocalEngine({ toolId, files, options, token, signal: context?.signal });
   return { blob, fileName: `${toolId}-output.zip` };
 };
 
@@ -385,17 +389,27 @@ export const toolsRegistry: ToolDefinition[] = [
     ],
     engine: "browser",
     icon: FileSearch,
-    runBrowser: async (files, options, onProgress) => {
+    runBrowser: async (files, options, onProgress, context) => {
       const lines: string[] = [];
       const language = String(options.language || "eng");
+      const maxPages = FILE_LIMITS.maxPdfPagesForOcr;
       let index = 0;
-      while (true) {
+      while (index < maxPages) {
+        if (context?.signal?.aborted) {
+          throw new DOMException("OCR aborted", "AbortError");
+        }
         const canvas = await renderPdfPageToCanvas(files[0], index);
         if (!canvas) break;
-        const text = await runOcrOnCanvas(canvas, language);
+        const text = await runOcrOnCanvas(canvas, language, {
+          signal: context?.signal,
+          timeoutMs: FILE_LIMITS.ocrTimeoutMsPerPage
+        });
         lines.push(text);
         index += 1;
         onProgress?.(Math.min(90, index * 15), `OCR page ${index}`);
+      }
+      if (index >= maxPages) {
+        lines.push(`\\n[warning] OCR limited to first ${maxPages} pages for safety.`);
       }
       const blob = new Blob([lines.join("\n\n")], { type: "text/plain" });
       return { blob, fileName: "ocr.txt" };

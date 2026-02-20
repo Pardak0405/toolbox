@@ -16,6 +16,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Trash2 } from "lucide-react";
+import { sanitizeText } from "@/lib/sanitize";
 
 export type FileQueueItem = {
   id: string;
@@ -92,7 +93,7 @@ function SortableRow({
           <GripVertical className="h-4 w-4" />
         </button>
         <div>
-          <p className="text-sm font-medium">{item.file.name}</p>
+          <p className="text-sm font-medium">{sanitizeText(item.file.name, 120)}</p>
           <p className="text-xs text-muted">
             {(item.file.size / 1024 / 1024).toFixed(2)} MB
           </p>

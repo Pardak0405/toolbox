@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { buildSecurityHeaders } from "./config/security";
 
 const nextConfig: NextConfig = {
   output: "export",
@@ -7,6 +8,16 @@ const nextConfig: NextConfig = {
   },
   images: {
     unoptimized: true
+  },
+  async headers() {
+    const isDev = process.env.NODE_ENV !== "production";
+    const securityHeaders = buildSecurityHeaders(isDev);
+    return [
+      {
+        source: "/:path*",
+        headers: securityHeaders
+      }
+    ];
   }
 };
 

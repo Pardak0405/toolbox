@@ -1,13 +1,20 @@
 {
-  "name": "doc-toolkit",
+  "name": "toolbox",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@10.9.2",
+  "engines": {
+    "node": ">=22.16.0",
+    "npm": ">=10.9.2"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build && node scripts/fix-export-routes.mjs",
     "start": "next start",
     "lint": "eslint",
-    "smoke": "node scripts/smoke-test.mjs"
+    "smoke": "node scripts/smoke-test.mjs",
+    "security:audit": "npm audit --audit-level=moderate",
+    "security:audit:prod": "npm audit --omit=dev --audit-level=moderate"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -17,13 +24,13 @@
     "jszip": "^3.10.1",
     "lucide-react": "^0.475.0",
     "next": "^16.1.6",
-    "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^4.10.38",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "4.10.38",
     "pptxgenjs": "^3.12.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "react-dropzone": "^15.0.0",
-    "tesseract.js": "^5.1.1",
+    "tesseract.js": "5.1.1",
     "docx": "^8.5.0"
   },
   "devDependencies": {

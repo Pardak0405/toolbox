@@ -1,50 +1,41 @@
 const LOCAL_ENGINE_URL = "http://127.0.0.1:34781";
-const SESSION_STORAGE_KEY = "toolbox_local_engine_token";
-let sessionPromise: Promise<string> | null = null;
-
-function createRandomToken() {
-  const bytes = crypto.getRandomValues(new Uint8Array(24));
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function registerLocalSessionToken(token: string) {
-  const response = await fetch(`${LOCAL_ENGINE_URL}/api/session/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token })
-  });
-  if (!response.ok) {
-    throw new Error(await response.text());
-  }
-}
+const SESSION_STORAGE_KEY = "toolbox_local_engine_pairing_key";
+let pairingKeyPromise: Promise<string> | null = null;
 
 export async function getOrCreateLocalSessionToken() {
   if (typeof window === "undefined") {
-    throw new Error("Local session token is only available in browser context.");
+    throw new Error("Local pairing key is only available in browser context.");
   }
-  if (!sessionPromise) {
-    sessionPromise = (async () => {
+  if (!pairingKeyPromise) {
+    pairingKeyPromise = (async () => {
       const stored = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
       if (stored) return stored;
-      const token = createRandomToken();
-      await registerLocalSessionToken(token);
-      window.sessionStorage.setItem(SESSION_STORAGE_KEY, token);
-      return token;
+      const key = window.prompt(
+        "로컬 엔진 페어링 키를 입력하세요.\n기본 경로: ~/.toolbox-local-engine/pairing.key"
+      );
+      const normalized = String(key || "").trim();
+      if (!normalized) {
+        throw new Error("Pairing key is required.");
+      }
+      window.sessionStorage.setItem(SESSION_STORAGE_KEY, normalized);
+      return normalized;
     })();
   }
-  return sessionPromise;
+  return pairingKeyPromise;
 }
 
 export async function callLocalEngine({
   toolId,
   options,
   files,
-  token
+  token,
+  signal
 }: {
   toolId: string;
   options: Record<string, unknown>;
   files: File[];
   token: string;
+  signal?: AbortSignal;
 }) {
   const formData = new FormData();
   formData.append("toolId", toolId);
@@ -54,8 +45,9 @@ export async function callLocalEngine({
   const response = await fetch(`${LOCAL_ENGINE_URL}/api/convert`, {
     method: "POST",
     headers: {
-      "x-session-token": token
+      "x-toolbox-pairing-key": token
     },
+    signal,
     body: formData
   });
 
