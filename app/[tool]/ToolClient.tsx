@@ -8,7 +8,7 @@ import PdfPreview from "@/app/_components/PdfPreview";
 import ProgressModal from "@/app/_components/ProgressModal";
 import ResultPanel from "@/app/_components/ResultPanel";
 import AdSlot from "@/app/_components/AdSlot";
-import { getRecommendations, getToolBySlug, ToolDefinition } from "@/tools/registry";
+import { getRecommendations, getToolBySlug } from "@/tools/registry";
 import { createDownloadUrl } from "@/app/_lib/utils";
 
 const multiTools = new Set([
@@ -19,7 +19,8 @@ const multiTools = new Set([
   "compare-pdf"
 ]);
 
-export default function ToolClient({ tool }: { tool: ToolDefinition }) {
+export default function ToolClient({ toolSlug }: { toolSlug: string }) {
+  const tool = getToolBySlug(toolSlug);
   const [items, setItems] = useState<FileQueueItem[]>([]);
   const [options, setOptions] = useState<Record<string, unknown>>({});
   const [progress, setProgress] = useState(0);
@@ -31,6 +32,17 @@ export default function ToolClient({ tool }: { tool: ToolDefinition }) {
   const [localToken, setLocalToken] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [showMoreIntro, setShowMoreIntro] = useState(false);
+
+  if (!tool) {
+    return (
+      <div className="py-10">
+        <section className="rounded-3xl bg-white p-8 shadow-soft">
+          <h1 className="font-display text-2xl">Tool not found</h1>
+          <p className="mt-2 text-sm text-muted">Please return to home and pick a valid tool.</p>
+        </section>
+      </div>
+    );
+  }
 
   const accept = useMemo(() => {
     const map: Record<string, string[]> = {};

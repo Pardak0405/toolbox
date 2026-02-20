@@ -3,13 +3,18 @@ import ToolClient from "@/app/[tool]/ToolClient";
 import { BRAND, getBrandOrigin } from "@/config/brand";
 import { allTools, getToolBySlug, getToolMetaDescription } from "@/tools/registry";
 
-export default function ToolPage({ params }: { params: { tool: string } }) {
-  const tool = getToolBySlug(params.tool);
+type ToolPageProps = {
+  params: Promise<{ tool: string }>;
+};
+
+export default async function ToolPage({ params }: ToolPageProps) {
+  const { tool: toolSlug } = await params;
+  const tool = getToolBySlug(toolSlug);
   if (!tool) {
     notFound();
   }
 
-  return <ToolClient tool={tool} />;
+  return <ToolClient toolSlug={toolSlug} />;
 }
 
 export async function generateStaticParams() {
@@ -18,10 +23,9 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({
   params
-}: {
-  params: { tool: string };
-}) {
-  const tool = getToolBySlug(params.tool);
+}: ToolPageProps) {
+  const { tool: toolSlug } = await params;
+  const tool = getToolBySlug(toolSlug);
   if (!tool) return {};
   const description = getToolMetaDescription(tool);
   return {
