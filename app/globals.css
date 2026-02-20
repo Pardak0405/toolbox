@@ -89,6 +89,20 @@ main {
   color: var(--ink);
 }
 
+.btn-primary {
+  background: var(--ember-dark);
+  color: #fff;
+  border: 1px solid var(--ember-dark);
+}
+
+.btn-primary:hover {
+  filter: brightness(0.96);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+}
+
 @media (max-width: 768px) {
   .dropzone {
     padding: 1.6rem;

@@ -135,17 +135,26 @@ async function zipCanvasImages(canvases: HTMLCanvasElement[], baseName: string) 
 }
 
 async function createNoticePdf(title: string, detail: string) {
+  const normalizePdfText = (value: string) =>
+    value
+      .normalize("NFKC")
+      .replace(/[^\x20-\x7E\n]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
   const doc = await PDFDocument.create();
   const page = doc.addPage([612, 792]);
   const font = await doc.embedFont(StandardFonts.Helvetica);
-  page.drawText(title, {
+  const safeTitle = normalizePdfText(title).slice(0, 120);
+  const safeDetail = normalizePdfText(detail).slice(0, 1200);
+  page.drawText(safeTitle, {
     x: 72,
     y: 700,
     size: 20,
     font,
     color: rgb(0.12, 0.12, 0.12)
   });
-  page.drawText(detail, {
+  page.drawText(safeDetail, {
     x: 72,
     y: 660,
     size: 12,

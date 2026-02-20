@@ -327,7 +327,7 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
             <button
               onClick={processBrowser}
               disabled={items.length === 0 || processing}
-              className="rounded-full bg-emberDark px-6 py-2 text-sm font-semibold text-white disabled:opacity-50"
+              className="btn-primary rounded-full px-6 py-2 text-sm font-semibold"
             >
               Run in browser
             </button>
