@@ -10,6 +10,7 @@ import ResultPanel from "@/app/_components/ResultPanel";
 import AdSlot from "@/app/_components/AdSlot";
 import { getRecommendations, getToolBySlug } from "@/tools/registry";
 import { createDownloadUrl } from "@/app/_lib/utils";
+import { getOrCreateLocalSessionToken } from "@/app/_lib/local-engine";
 
 const multiTools = new Set([
   "merge-pdf",
@@ -29,7 +30,6 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
     null
   );
   const [processing, setProcessing] = useState(false);
-  const [localToken, setLocalToken] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [showMoreIntro, setShowMoreIntro] = useState(false);
 
@@ -131,18 +131,17 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
 
   const processLocal = async () => {
     if (!tool.runLocal) return;
-    if (!localToken) {
-      setErrorMessage("로컬 엔진 세션 토큰을 입력해 주세요.");
-      return;
-    }
     if (items.length === 0) return;
 
     setErrorMessage("");
     setProcessing(true);
-    setProgress(10);
-    setStatus("Sending files to local engine");
+    setProgress(5);
+    setStatus("Preparing local session");
 
     try {
+      const localToken = await getOrCreateLocalSessionToken();
+      setProgress(10);
+      setStatus("Sending files to local engine");
       const finalOptions = { ...defaultOptions, ...options };
       const nextResult = await tool.runLocal(
         items.map((item) => item.file),
@@ -208,14 +207,8 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
             <div className="rounded-2xl border border-line bg-white p-5">
               <h4 className="font-semibold">Local engine</h4>
               <p className="text-xs text-muted">
-                고급 변환은 로컬 엔진을 사용하세요. (127.0.0.1:34781, 세션 토큰 필요)
+                고급 변환은 로컬 엔진을 사용하세요. (127.0.0.1:34781, 세션 자동 발급)
               </p>
-              <input
-                value={localToken}
-                onChange={(event) => setLocalToken(event.target.value)}
-                placeholder="Session token"
-                className="mt-3 w-full rounded-lg border border-line px-3 py-2 text-sm"
-              />
             </div>
           ) : null}
           {errorMessage ? (

@@ -4,6 +4,7 @@ import multer from "multer";
 import os from "node:os";
 import path from "node:path";
 import fs from "node:fs/promises";
+import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 
 const app = express();
@@ -16,6 +17,10 @@ const allowedOrigins = (process.env.TOOLBOX_ORIGINS || "http://localhost:3000")
   .map((value) => value.trim())
   .filter(Boolean);
 const sessionToken = process.env.TOOLBOX_SESSION_TOKEN || "";
+const tokenTtlMs = Number(process.env.TOOLBOX_SESSION_TTL_MS || 1000 * 60 * 30);
+const issuedTokens = new Map();
+
+app.use(express.json({ limit: "16kb" }));
 
 app.use(
   cors({
@@ -131,11 +136,41 @@ function convertWithSoffice(inputPath, outDir, targetExt) {
   return path.join(outDir, `${base}.${targetExt}`);
 }
 
-app.post("/api/convert", upload.array("files"), async (req, res) => {
-  if (!sessionToken) {
-    return res.status(400).send("Set TOOLBOX_SESSION_TOKEN before running.");
+function cleanupExpiredTokens() {
+  const now = Date.now();
+  for (const [token, expiresAt] of issuedTokens.entries()) {
+    if (expiresAt <= now) {
+      issuedTokens.delete(token);
+    }
   }
-  if (req.headers["x-session-token"] !== sessionToken) {
+}
+
+function isTokenValid(token) {
+  if (!token) return false;
+  if (sessionToken && token === sessionToken) return true;
+  const expiresAt = issuedTokens.get(token);
+  if (!expiresAt) return false;
+  if (expiresAt <= Date.now()) {
+    issuedTokens.delete(token);
+    return false;
+  }
+  return true;
+}
+
+app.post("/api/session/register", (req, res) => {
+  cleanupExpiredTokens();
+  const token = String(req.body?.token || "");
+  if (!token || token.length < 24) {
+    return res.status(400).send("Invalid token format.");
+  }
+  issuedTokens.set(token, Date.now() + tokenTtlMs);
+  return res.json({ ok: true, expiresInMs: tokenTtlMs });
+});
+
+app.post("/api/convert", upload.array("files"), async (req, res) => {
+  cleanupExpiredTokens();
+  const token = String(req.headers["x-session-token"] || "");
+  if (!isTokenValid(token)) {
     return res.status(401).send("Invalid session token.");
   }
 
@@ -289,4 +324,5 @@ app.post("/api/convert", upload.array("files"), async (req, res) => {
 app.listen(PORT, HOST, () => {
   console.log(`Local engine listening at http://${HOST}:${PORT}`);
   console.log("Allowed origins:", allowedOrigins.join(", "));
+  console.log("Session mode:", sessionToken ? "static-or-issued" : "issued");
 });
