@@ -203,14 +203,6 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
             options={options}
             onChange={setOptions}
           />
-          {tool.engine !== "browser" ? (
-            <div className="rounded-2xl border border-line bg-white p-5">
-              <h4 className="font-semibold">Local engine</h4>
-              <p className="text-xs text-muted">
-                고급 변환은 로컬 엔진을 사용하세요. (127.0.0.1:34781, 세션 자동 발급)
-              </p>
-            </div>
-          ) : null}
           {errorMessage ? (
             <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
               {errorMessage}
