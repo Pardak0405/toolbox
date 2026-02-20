@@ -134,34 +134,171 @@ async function zipCanvasImages(canvases: HTMLCanvasElement[], baseName: string) 
   return { blob: content, fileName: `${baseName}.zip` };
 }
 
-async function createNoticePdf(title: string, detail: string) {
-  const normalizePdfText = (value: string) =>
-    value
-      .normalize("NFKC")
-      .replace(/[^\x20-\x7E\n]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
+function toWinAnsiSafe(value: string) {
+  return value
+    .normalize("NFKC")
+    .replace(/[^\x20-\x7E\n]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
+async function textPdfFromLines(title: string, lines: string[]) {
   const doc = await PDFDocument.create();
-  const page = doc.addPage([612, 792]);
   const font = await doc.embedFont(StandardFonts.Helvetica);
-  const safeTitle = normalizePdfText(title).slice(0, 120);
-  const safeDetail = normalizePdfText(detail).slice(0, 1200);
-  page.drawText(safeTitle, {
-    x: 72,
-    y: 700,
-    size: 20,
-    font,
-    color: rgb(0.12, 0.12, 0.12)
-  });
-  page.drawText(safeDetail, {
-    x: 72,
-    y: 660,
-    size: 12,
-    font,
-    color: rgb(0.3, 0.3, 0.3)
-  });
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const margin = 40;
+  const lineHeight = 14;
+  let page = doc.addPage([pageWidth, pageHeight]);
+  let y = pageHeight - margin;
+
+  const writeLine = (line: string, size = 11) => {
+    if (y < margin) {
+      page = doc.addPage([pageWidth, pageHeight]);
+      y = pageHeight - margin;
+    }
+    page.drawText(toWinAnsiSafe(line).slice(0, 110), {
+      x: margin,
+      y,
+      size,
+      font,
+      color: rgb(0.15, 0.15, 0.15)
+    });
+    y -= lineHeight;
+  };
+
+  writeLine(title, 15);
+  y -= 8;
+  for (const line of lines) {
+    writeLine(line);
+  }
   return bytesToBlob(await doc.save(), "application/pdf");
+}
+
+function sortOfficeEntries(names: string[], prefix: string, suffix = ".xml") {
+  return names
+    .filter((name) => name.startsWith(prefix) && name.endsWith(suffix))
+    .sort((left, right) => {
+      const ln = Number(left.match(/(\d+)/)?.[1] || 0);
+      const rn = Number(right.match(/(\d+)/)?.[1] || 0);
+      return ln - rn;
+    });
+}
+
+async function extractXmlTexts(zip: JSZip, names: string[], tagSelector: string) {
+  const parser = new DOMParser();
+  const lines: string[] = [];
+  for (const name of names) {
+    const xml = await zip.file(name)?.async("string");
+    if (!xml) continue;
+    const doc = parser.parseFromString(xml, "text/xml");
+    const nodes = Array.from(doc.querySelectorAll(tagSelector));
+    const text = nodes
+      .map((node) => node.textContent || "")
+      .join(" ")
+      .trim();
+    if (text) lines.push(text);
+  }
+  return lines;
+}
+
+async function convertPowerpointToPdfInBrowser(file: File) {
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const slideNames = sortOfficeEntries(Object.keys(zip.files), "ppt/slides/slide");
+  const lines = await extractXmlTexts(zip, slideNames, "a\\:t,t");
+  const body = lines.length > 0 ? lines : ["No extractable text found in slide XML."];
+  return textPdfFromLines("PowerPoint to PDF (Browser Text Mode)", body);
+}
+
+async function convertWordToPdfInBrowser(file: File) {
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const lines = await extractXmlTexts(zip, ["word/document.xml"], "w\\:t,t");
+  const body = lines.length > 0 ? lines : ["No extractable text found in document XML."];
+  return textPdfFromLines("Word to PDF (Browser Text Mode)", body);
+}
+
+async function convertExcelToPdfInBrowser(file: File) {
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const parser = new DOMParser();
+  const sharedStringsXml = await zip.file("xl/sharedStrings.xml")?.async("string");
+  const sharedStrings: string[] = [];
+  if (sharedStringsXml) {
+    const sharedDoc = parser.parseFromString(sharedStringsXml, "text/xml");
+    sharedDoc.querySelectorAll("si").forEach((si) => {
+      sharedStrings.push((si.textContent || "").trim());
+    });
+  }
+
+  const sheetNames = sortOfficeEntries(Object.keys(zip.files), "xl/worksheets/sheet");
+  const lines: string[] = [];
+  for (const sheetName of sheetNames) {
+    const xml = await zip.file(sheetName)?.async("string");
+    if (!xml) continue;
+    const doc = parser.parseFromString(xml, "text/xml");
+    lines.push(`[${sheetName.split("/").pop()}]`);
+    doc.querySelectorAll("row").forEach((row) => {
+      const values = Array.from(row.querySelectorAll("c")).map((cell) => {
+        const type = cell.getAttribute("t");
+        const v = cell.querySelector("v")?.textContent?.trim() || "";
+        if (type === "s") {
+          return sharedStrings[Number(v)] || "";
+        }
+        return v;
+      });
+      const rowText = values.filter(Boolean).join(" | ");
+      if (rowText) lines.push(rowText);
+    });
+    lines.push("");
+  }
+  const body = lines.length > 0 ? lines : ["No extractable values found in worksheet XML."];
+  return textPdfFromLines("Excel to PDF (Browser Text Mode)", body);
+}
+
+function splitTextForPdf(text: string, chunk = 95) {
+  const normalized = toWinAnsiSafe(text);
+  if (!normalized) return [];
+  const words = normalized.split(" ");
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    if (!current) {
+      current = word;
+      continue;
+    }
+    if (`${current} ${word}`.length <= chunk) {
+      current = `${current} ${word}`;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+async function convertHtmlToPdfInBrowser(files: File[], options: Record<string, unknown>) {
+  const lines: string[] = [];
+  if (files[0]) {
+    const html = await files[0].text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    const title = doc.title?.trim();
+    if (title) lines.push(`Title: ${title}`);
+    const bodyText = doc.body?.textContent?.replace(/\s+/g, " ").trim() || "";
+    if (bodyText) lines.push(...splitTextForPdf(bodyText));
+  }
+
+  const url = String(options.url || "").trim();
+  if (url) {
+    lines.push("");
+    lines.push(`URL option: ${url}`);
+    lines.push(
+      "Browser security policies may block direct remote page capture. Upload HTML file for reliable conversion."
+    );
+  }
+
+  const body = lines.length > 0 ? lines : ["No HTML content found to convert."];
+  return textPdfFromLines("HTML to PDF (Browser Text Mode)", body);
 }
 
 const localRunner = async (
@@ -449,12 +586,9 @@ export const toolsRegistry: ToolDefinition[] = [
     optionsSchema: [],
     engine: "hybrid",
     icon: FileType2,
-    runBrowser: async () => ({
-      blob: await createNoticePdf(
-        "Browser conversion is limited",
-        "For accurate Word → PDF conversion, use the local engine."
-      ),
-      fileName: "browser-converted.pdf"
+    runBrowser: async (files) => ({
+      blob: await convertWordToPdfInBrowser(files[0]),
+      fileName: "word-browser.pdf"
     }),
     runLocal: (files, options) =>
       localRunner("word-to-pdf", files, options)
@@ -470,12 +604,9 @@ export const toolsRegistry: ToolDefinition[] = [
     optionsSchema: [],
     engine: "hybrid",
     icon: FileType2,
-    runBrowser: async () => ({
-      blob: await createNoticePdf(
-        "Browser conversion is limited",
-        "For accurate PowerPoint → PDF conversion, use the local engine."
-      ),
-      fileName: "browser-converted.pdf"
+    runBrowser: async (files) => ({
+      blob: await convertPowerpointToPdfInBrowser(files[0]),
+      fileName: "powerpoint-browser.pdf"
     }),
     runLocal: (files, options) =>
       localRunner("powerpoint-to-pdf", files, options)
@@ -491,12 +622,9 @@ export const toolsRegistry: ToolDefinition[] = [
     optionsSchema: [],
     engine: "hybrid",
     icon: FileType2,
-    runBrowser: async () => ({
-      blob: await createNoticePdf(
-        "Browser conversion is limited",
-        "For accurate Excel → PDF conversion, use the local engine."
-      ),
-      fileName: "browser-converted.pdf"
+    runBrowser: async (files) => ({
+      blob: await convertExcelToPdfInBrowser(files[0]),
+      fileName: "excel-browser.pdf"
     }),
     runLocal: (files, options) =>
       localRunner("excel-to-pdf", files, options)
@@ -519,11 +647,8 @@ export const toolsRegistry: ToolDefinition[] = [
     ],
     engine: "hybrid",
     icon: FileUp,
-    runBrowser: async (_files, options) => ({
-      blob: await createNoticePdf(
-        "HTML to PDF (browser preview)",
-        `We captured ${String(options.url || "a URL")} in browser mode. Use local engine for full fidelity.`
-      ),
+    runBrowser: async (files, options) => ({
+      blob: await convertHtmlToPdfInBrowser(files, options),
       fileName: "browser-html.pdf"
     }),
     runLocal: (files, options) =>
