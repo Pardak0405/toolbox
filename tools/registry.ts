@@ -306,8 +306,7 @@ async function convertPowerpointToPdfInBrowser(
       useCORS: true,
       allowTaint: true,
       foreignObjectRendering: true,
-      imageTimeout: 5000,
-      letterRendering: true
+      imageTimeout: 5000
     });
     const useJpeg = compressMode !== "none";
     const jpegQuality =
