@@ -45,6 +45,14 @@ export default function RootLayout({
 
   return (
     <html lang="en" className={`${fraunces.variable} ${sora.variable}`}>
+      <head>
+        <Script
+          async
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4301110787085467"
+          crossOrigin="anonymous"
+          strategy="afterInteractive"
+        />
+      </head>
       <body>
         <Script id="website-jsonld" type="application/ld+json" strategy="afterInteractive">
           {websiteJsonLd}
