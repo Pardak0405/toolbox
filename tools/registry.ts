@@ -272,11 +272,11 @@ async function convertPowerpointToPdfInBrowser(
 
   const stage = document.createElement("div");
   stage.style.position = "fixed";
-  stage.style.left = "0";
+  stage.style.left = "-10000px";
   stage.style.top = "0";
   stage.style.pointerEvents = "none";
   stage.style.zIndex = "-1";
-  stage.style.visibility = "hidden";
+  stage.style.visibility = "visible";
   stage.style.opacity = "1";
   stage.style.width = `${widthPx}px`;
   stage.style.height = `${heightPx}px`;
@@ -342,6 +342,7 @@ async function convertPowerpointToPdfInBrowser(
     const captureTarget = innerSlide ?? slideRoot ?? sandbox;
     captureTarget.style.overflow = "visible";
     captureTarget.style.background = "#ffffff";
+    captureTarget.style.visibility = "visible";
     captureTarget.querySelectorAll("img").forEach((img) => {
       img.loading = "eager";
       img.decoding = "sync";
@@ -405,6 +406,9 @@ async function convertPowerpointToPdfInBrowser(
 
     if (!canvas || isMostlyWhite(canvas)) {
       try {
+        if (!document?.body) {
+          throw new Error("document body unavailable");
+        }
         const domToImage = await import("dom-to-image-more");
         const toPng =
           (domToImage as unknown as { toPng?: Function }).toPng ||
