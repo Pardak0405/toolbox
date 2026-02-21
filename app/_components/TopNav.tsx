@@ -29,7 +29,7 @@ export default function TopNav() {
               alt="Toolbox 로고"
               width={240}
               height={60}
-              className="h-8 md:h-10 w-auto"
+              className="h-10 md:h-12 w-auto"
               priority
             />
             <div className="hidden sm:block">
