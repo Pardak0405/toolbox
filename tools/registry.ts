@@ -198,7 +198,8 @@ async function extractXmlTexts(zip: JSZip, names: string[], tagSelector: string)
 
 async function convertPowerpointToPdfInBrowser(
   file: File,
-  options: Record<string, unknown> = {}
+  options: Record<string, unknown> = {},
+  onProgress?: (progress: number, status: string) => void
 ) {
   const { pptxToHtml } = await import("@jvmr/pptx-to-html");
   const html2canvas = (await import("html2canvas")).default;
@@ -285,7 +286,10 @@ async function convertPowerpointToPdfInBrowser(
     await Promise.race([Promise.all([...imagePromises, fontPromise]), timeout]);
   };
 
-  for (const html of slidesHtml) {
+  const totalSlides = Math.max(1, slidesHtml.length);
+  for (const [index, html] of slidesHtml.entries()) {
+    const startProgress = Math.round(15 + (index / totalSlides) * 70);
+    onProgress?.(startProgress, `슬라이드 렌더링 ${index + 1}/${totalSlides}`);
     const sandbox = document.createElement("div");
     sandbox.style.width = `${widthPx}px`;
     sandbox.style.height = `${heightPx}px`;
@@ -319,6 +323,8 @@ async function convertPowerpointToPdfInBrowser(
     const image = useJpeg ? await doc.embedJpg(bytes) : await doc.embedPng(bytes);
     const page = doc.addPage([widthPx, heightPx]);
     page.drawImage(image, { x: 0, y: 0, width: widthPx, height: heightPx });
+    const nextProgress = Math.round(15 + ((index + 1) / totalSlides) * 70);
+    onProgress?.(nextProgress, `슬라이드 렌더링 ${index + 1}/${totalSlides}`);
   }
 
   stage.remove();
@@ -327,6 +333,7 @@ async function convertPowerpointToPdfInBrowser(
       "No readable slide data found. Try smaller files or check PPTX integrity."
     ]);
   }
+  onProgress?.(95, "PDF 저장 중");
   return bytesToBlob(await doc.save(), "application/pdf");
 }
 
@@ -752,8 +759,8 @@ export const toolsRegistry: ToolDefinition[] = [
     ],
     engine: "browser",
     icon: FileType2,
-    runBrowser: async (files, options) => ({
-      blob: await convertPowerpointToPdfInBrowser(files[0], options),
+    runBrowser: async (files, options, onProgress) => ({
+      blob: await convertPowerpointToPdfInBrowser(files[0], options, onProgress),
       fileName: "powerpoint-browser.pdf"
     }),
     // browser-only

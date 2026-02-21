@@ -162,6 +162,17 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
     setStatus("Preparing files");
     const controller = new AbortController();
     setAbortController(controller);
+    let lastRealProgress = Date.now();
+    let hasRealProgress = false;
+    const progressTimer = window.setInterval(() => {
+      setProgress((prev) => {
+        if (hasRealProgress && Date.now() - lastRealProgress < 1200) {
+          return prev;
+        }
+        if (prev >= 85) return prev;
+        return prev + 1;
+      });
+    }, 700);
 
     try {
       const finalOptions = { ...defaultOptions, ...options };
@@ -169,6 +180,8 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
         items.map((item) => item.file),
         finalOptions,
         (nextProgress, nextStatus) => {
+          hasRealProgress = true;
+          lastRealProgress = Date.now();
           setProgress(nextProgress);
           setStatus(nextStatus);
         },
@@ -202,6 +215,7 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
       setResult({ url: reportUrl, name: `${tool.slug}-fallback-report.txt`, blob: reportBlob });
       setErrorMessage(`브라우저 처리 실패: ${detail}`);
     } finally {
+      window.clearInterval(progressTimer);
       setAbortController(null);
       setProcessing(false);
     }
