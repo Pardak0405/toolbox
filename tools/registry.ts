@@ -303,6 +303,16 @@ async function convertPowerpointToPdfInBrowser(
     sandbox.style.fontFamily =
       "Noto Sans KR, Apple SD Gothic Neo, Malgun Gothic, Segoe UI, sans-serif";
     sandbox.innerHTML = html;
+    const styleFix = document.createElement("style");
+    styleFix.textContent = `
+      * { box-sizing: border-box; }
+      img { max-width: none; }
+      svg { overflow: visible; }
+      .slide-container, .slide { background: #ffffff; }
+      .slide-container, .slide { line-height: 1.2; }
+      .slide-container, .slide { text-rendering: geometricPrecision; }
+    `;
+    sandbox.prepend(styleFix);
     sandbox.querySelectorAll("script,iframe,object,embed,link").forEach((node) => {
       node.remove();
     });
@@ -312,6 +322,8 @@ async function convertPowerpointToPdfInBrowser(
         ? (slideRoot.querySelector(".slide") as HTMLElement | null)
         : null;
     const captureTarget = innerSlide ?? slideRoot ?? sandbox;
+    captureTarget.style.overflow = "visible";
+    captureTarget.style.background = "#ffffff";
     captureTarget.querySelectorAll("img").forEach((img) => {
       img.loading = "eager";
       img.decoding = "sync";
@@ -326,6 +338,8 @@ async function convertPowerpointToPdfInBrowser(
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     const canvas = await html2canvas(captureTarget, {
       backgroundColor: "#ffffff",
+      width: widthPx,
+      height: heightPx,
       scale,
       useCORS: true,
       allowTaint: true,
