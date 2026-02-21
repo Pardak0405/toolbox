@@ -229,13 +229,19 @@ async function convertPowerpointToPdfInBrowser(
         ? 1.4
         : 1.8;
 
-  const slidesHtml = await pptxToHtml(await file.arrayBuffer(), {
-    width: widthPx,
-    height: heightPx,
-    scaleToFit: false,
-    letterbox: false,
-    domParserFactory: () => new DOMParser()
-  });
+  let slidesHtml: string[] = [];
+  try {
+    slidesHtml = await pptxToHtml(await file.arrayBuffer(), {
+      width: widthPx,
+      height: heightPx,
+      scaleToFit: false,
+      letterbox: false,
+      domParserFactory: () => new DOMParser()
+    });
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : "pptx-to-html failed";
+    throw new Error(`PPTX parse failed: ${detail}`);
+  }
 
   const doc = await PDFDocument.create();
   if (keepMetadata) {
@@ -259,6 +265,8 @@ async function convertPowerpointToPdfInBrowser(
   stage.style.top = "0";
   stage.style.pointerEvents = "none";
   stage.style.zIndex = "-1";
+  stage.style.visibility = "hidden";
+  stage.style.opacity = "1";
   stage.style.width = `${widthPx}px`;
   stage.style.height = `${heightPx}px`;
   stage.style.background = "#ffffff";
@@ -335,17 +343,23 @@ async function convertPowerpointToPdfInBrowser(
 
     await waitForAssets(captureTarget);
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    const renderSlide = async (useForeignObject: boolean) =>
-      html2canvas(captureTarget, {
-        backgroundColor: "#ffffff",
-        width: widthPx,
-        height: heightPx,
-        scale,
-        useCORS: true,
-        allowTaint: true,
-        foreignObjectRendering: useForeignObject,
-        imageTimeout: 5000
-      });
+    const renderSlide = async (useForeignObject: boolean) => {
+      try {
+        return await html2canvas(captureTarget, {
+          backgroundColor: "#ffffff",
+          width: widthPx,
+          height: heightPx,
+          scale,
+          useCORS: true,
+          allowTaint: true,
+          foreignObjectRendering: useForeignObject,
+          imageTimeout: 5000
+        });
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "html2canvas failed";
+        throw new Error(`Slide render failed: ${detail}`);
+      }
+    };
 
     const isMostlyWhite = (canvas: HTMLCanvasElement) => {
       const ctx = canvas.getContext("2d");
