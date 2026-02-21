@@ -270,6 +270,142 @@ function resolveSchemeColor(node: Element | null, theme: Record<string, string>)
   return null;
 }
 
+function emuToPx(value: string | number | null | undefined) {
+  const num = typeof value === "number" ? value : Number(value || 0);
+  return Math.round(num / 9525);
+}
+
+async function getRelsMap(zip: JSZip, relsPath: string) {
+  const relsXml = await zip.file(relsPath)?.async("string");
+  if (!relsXml) return new Map<string, string>();
+  const parser = new DOMParser();
+  const relsDoc = parser.parseFromString(relsXml, "text/xml");
+  const map = new Map<string, string>();
+  Array.from(relsDoc.getElementsByTagName("Relationship")).forEach((node) => {
+    const id = node.getAttribute("Id");
+    const target = node.getAttribute("Target");
+    if (id && target) map.set(id, target);
+  });
+  return map;
+}
+
+async function loadImage(dataUrl: string) {
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  const loaded = new Promise<HTMLImageElement>((resolve, reject) => {
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Image load failed"));
+  });
+  img.src = dataUrl;
+  return loaded;
+}
+
+async function extractPicturesFromXml(
+  xml: string,
+  relsMap: Map<string, string>,
+  baseDir: string,
+  zip: JSZip
+) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xml, "text/xml");
+  const pics = Array.from(doc.querySelectorAll("p\\:pic,pic"));
+  const results: { src: string; x: number; y: number; w: number; h: number }[] = [];
+  for (const pic of pics) {
+    const blip = pic.querySelector("a\\:blip,blip");
+    const rId = blip?.getAttribute("r:embed") || blip?.getAttribute("embed");
+    if (!rId) continue;
+    const target = relsMap.get(rId);
+    if (!target) continue;
+    const resolved = resolveRelTarget(baseDir, target);
+    const file = zip.file(resolved);
+    if (!file) continue;
+    const base64 = await file.async("base64");
+    const mime = guessMimeType(resolved);
+    const src = `data:${mime};base64,${base64}`;
+    const xfrm = pic.querySelector("a\\:xfrm,xfrm");
+    const off = xfrm?.querySelector("a\\:off,off");
+    const ext = xfrm?.querySelector("a\\:ext,ext");
+    const x = emuToPx(off?.getAttribute("x"));
+    const y = emuToPx(off?.getAttribute("y"));
+    const w = emuToPx(ext?.getAttribute("cx"));
+    const h = emuToPx(ext?.getAttribute("cy"));
+    if (w <= 0 || h <= 0) continue;
+    results.push({ src, x, y, w, h });
+  }
+  return results;
+}
+
+async function renderSlideFallbackCanvas(
+  zip: JSZip,
+  slideName: string,
+  parser: DOMParser,
+  widthPx: number,
+  heightPx: number,
+  scale: number,
+  bgInfo: BackgroundInfo | null
+) {
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(widthPx * scale);
+  canvas.height = Math.round(heightPx * scale);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return canvas;
+  ctx.scale(scale, scale);
+  ctx.fillStyle = bgInfo?.color || "#ffffff";
+  ctx.fillRect(0, 0, widthPx, heightPx);
+  if (bgInfo?.imageUrl) {
+    try {
+      const bgImg = await loadImage(bgInfo.imageUrl);
+      const ratio = Math.max(widthPx / bgImg.width, heightPx / bgImg.height);
+      const w = bgImg.width * ratio;
+      const h = bgImg.height * ratio;
+      const x = (widthPx - w) / 2;
+      const y = (heightPx - h) / 2;
+      ctx.drawImage(bgImg, x, y, w, h);
+    } catch {
+      // ignore background draw failures
+    }
+  }
+
+  const slideXml = await zip.file(slideName)?.async("string");
+  if (!slideXml) return canvas;
+  const slideRelsPath = slideName.replace("slides/", "slides/_rels/") + ".rels";
+  const slideBaseDir = slideName.split("/").slice(0, -1).join("/");
+  const slideRels = await getRelsMap(zip, slideRelsPath);
+  const slidePics = await extractPicturesFromXml(slideXml, slideRels, slideBaseDir, zip);
+
+  const layoutPics: typeof slidePics = [];
+  const slideRelsXml = await zip.file(slideRelsPath)?.async("string");
+  if (slideRelsXml) {
+    const relsDoc = parser.parseFromString(slideRelsXml, "text/xml");
+    const layoutRel = Array.from(relsDoc.getElementsByTagName("Relationship")).find(
+      (node) => (node.getAttribute("Type") || "").endsWith("/slideLayout")
+    );
+    const layoutTarget = layoutRel?.getAttribute("Target");
+    if (layoutTarget) {
+      const layoutPath = resolveRelTarget(slideBaseDir, layoutTarget);
+      const layoutXml = await zip.file(layoutPath)?.async("string");
+      if (layoutXml) {
+        const layoutRelsPath = layoutPath.replace("slideLayouts/", "slideLayouts/_rels/") + ".rels";
+        const layoutBaseDir = layoutPath.split("/").slice(0, -1).join("/");
+        const layoutRels = await getRelsMap(zip, layoutRelsPath);
+        layoutPics.push(
+          ...(await extractPicturesFromXml(layoutXml, layoutRels, layoutBaseDir, zip))
+        );
+      }
+    }
+  }
+
+  for (const pic of [...layoutPics, ...slidePics]) {
+    try {
+      const img = await loadImage(pic.src);
+      ctx.drawImage(img, pic.x, pic.y, pic.w, pic.h);
+    } catch {
+      // ignore image draw failure
+    }
+  }
+  return canvas;
+}
+
 async function getSlideBackgroundInfo(
   zip: JSZip,
   slideName: string,
@@ -643,6 +779,21 @@ async function convertPowerpointToPdfInBrowser(
     if (!canvas) {
       try {
         canvas = await renderViaSvg();
+      } catch (error) {
+        renderError = error as Error;
+      }
+    }
+    if (!canvas && slideName) {
+      try {
+        canvas = await renderSlideFallbackCanvas(
+          zip,
+          slideName,
+          parser,
+          widthPx,
+          heightPx,
+          scale,
+          bgInfo
+        );
       } catch (error) {
         renderError = error as Error;
       }
