@@ -231,31 +231,71 @@ async function getSlideBackgroundDataUrl(
   slideName: string,
   parser: DOMParser
 ) {
-  const xml = await zip.file(slideName)?.async("string");
-  if (!xml) return null;
-  const slideDoc = parser.parseFromString(xml, "text/xml");
-  const blip =
-    slideDoc.querySelector("p\\:bg a\\:blip, bg a\\:blip") ||
-    slideDoc.querySelector("p\\:bgRef a\\:blip, bgRef a\\:blip");
-  if (!blip) return null;
-  const rId = blip.getAttribute("r:embed") || blip.getAttribute("embed");
-  if (!rId) return null;
-  const relsPath = slideName.replace("slides/", "slides/_rels/") + ".rels";
-  const relsXml = await zip.file(relsPath)?.async("string");
-  if (!relsXml) return null;
-  const relsDoc = parser.parseFromString(relsXml, "text/xml");
-  const rel = Array.from(relsDoc.getElementsByTagName("Relationship")).find(
-    (node) => node.getAttribute("Id") === rId
+  const resolveBackgroundFromXml = async (
+    xml: string,
+    relsPath: string,
+    baseDir: string
+  ) => {
+    const doc = parser.parseFromString(xml, "text/xml");
+    const blip =
+      doc.querySelector("p\\:bg a\\:blip, bg a\\:blip") ||
+      doc.querySelector("p\\:bgRef a\\:blip, bgRef a\\:blip");
+    if (!blip) return null;
+    const rId = blip.getAttribute("r:embed") || blip.getAttribute("embed");
+    if (!rId) return null;
+    const relsXml = await zip.file(relsPath)?.async("string");
+    if (!relsXml) return null;
+    const relsDoc = parser.parseFromString(relsXml, "text/xml");
+    const rel = Array.from(relsDoc.getElementsByTagName("Relationship")).find(
+      (node) => node.getAttribute("Id") === rId
+    );
+    const target = rel?.getAttribute("Target");
+    if (!target) return null;
+    const resolved = resolveRelTarget(baseDir, target);
+    const file = zip.file(resolved);
+    if (!file) return null;
+    const base64 = await file.async("base64");
+    const mime = guessMimeType(resolved);
+    return `data:${mime};base64,${base64}`;
+  };
+
+  const slideXml = await zip.file(slideName)?.async("string");
+  if (!slideXml) return null;
+  const slideRelsPath = slideName.replace("slides/", "slides/_rels/") + ".rels";
+  const slideBaseDir = slideName.split("/").slice(0, -1).join("/");
+  let bg = await resolveBackgroundFromXml(slideXml, slideRelsPath, slideBaseDir);
+  if (bg) return bg;
+
+  const slideRelsXml = await zip.file(slideRelsPath)?.async("string");
+  if (!slideRelsXml) return null;
+  const slideRelsDoc = parser.parseFromString(slideRelsXml, "text/xml");
+  const layoutRel = Array.from(slideRelsDoc.getElementsByTagName("Relationship")).find(
+    (node) => (node.getAttribute("Type") || "").endsWith("/slideLayout")
   );
-  const target = rel?.getAttribute("Target");
-  if (!target) return null;
-  const baseDir = slideName.split("/").slice(0, -1).join("/");
-  const resolved = resolveRelTarget(baseDir, target);
-  const file = zip.file(resolved);
-  if (!file) return null;
-  const base64 = await file.async("base64");
-  const mime = guessMimeType(resolved);
-  return `data:${mime};base64,${base64}`;
+  const layoutTarget = layoutRel?.getAttribute("Target");
+  if (!layoutTarget) return null;
+  const layoutPath = resolveRelTarget(slideBaseDir, layoutTarget);
+  const layoutXml = await zip.file(layoutPath)?.async("string");
+  if (!layoutXml) return null;
+  const layoutRelsPath = layoutPath.replace("slideLayouts/", "slideLayouts/_rels/") + ".rels";
+  const layoutBaseDir = layoutPath.split("/").slice(0, -1).join("/");
+  bg = await resolveBackgroundFromXml(layoutXml, layoutRelsPath, layoutBaseDir);
+  if (bg) return bg;
+
+  const layoutRelsXml = await zip.file(layoutRelsPath)?.async("string");
+  if (!layoutRelsXml) return null;
+  const layoutRelsDoc = parser.parseFromString(layoutRelsXml, "text/xml");
+  const masterRel = Array.from(layoutRelsDoc.getElementsByTagName("Relationship")).find(
+    (node) => (node.getAttribute("Type") || "").endsWith("/slideMaster")
+  );
+  const masterTarget = masterRel?.getAttribute("Target");
+  if (!masterTarget) return null;
+  const masterPath = resolveRelTarget(layoutBaseDir, masterTarget);
+  const masterXml = await zip.file(masterPath)?.async("string");
+  if (!masterXml) return null;
+  const masterRelsPath = masterPath.replace("slideMasters/", "slideMasters/_rels/") + ".rels";
+  const masterBaseDir = masterPath.split("/").slice(0, -1).join("/");
+  return resolveBackgroundFromXml(masterXml, masterRelsPath, masterBaseDir);
 }
 
 async function extractXmlTexts(zip: JSZip, names: string[], tagSelector: string) {
@@ -439,7 +479,6 @@ async function convertPowerpointToPdfInBrowser(
     sandbox.style.transformOrigin = "top left";
     sandbox.style.fontFamily =
       "Noto Sans KR, Apple SD Gothic Neo, Malgun Gothic, Segoe UI, sans-serif";
-    sandbox.innerHTML = hydratedHtml;
     const styleFix = document.createElement("style");
     styleFix.textContent = `
       * { box-sizing: border-box; }
@@ -448,13 +487,14 @@ async function convertPowerpointToPdfInBrowser(
       .slide-container, .slide { line-height: 1.25; }
       .slide-container, .slide { text-rendering: geometricPrecision; }
     `;
-    sandbox.prepend(styleFix);
+    sandbox.appendChild(styleFix);
+    sandbox.insertAdjacentHTML("beforeend", hydratedHtml);
     sandbox.querySelectorAll("script,iframe,object,embed,link").forEach((node) => {
       node.remove();
     });
-    const slideRoot = sandbox.firstElementChild as HTMLElement | null;
+    const slideRoot = sandbox.querySelector(".slide-container, .slide") as HTMLElement | null;
     const captureTarget = slideRoot ?? sandbox;
-    captureTarget.style.overflow = "visible";
+    captureTarget.style.overflow = "hidden";
     captureTarget.style.background = "transparent";
     captureTarget.style.visibility = "visible";
     captureTarget.querySelectorAll("img").forEach((img) => {
@@ -473,6 +513,8 @@ async function convertPowerpointToPdfInBrowser(
       const clone = captureTarget.cloneNode(true) as HTMLElement;
       clone.style.width = `${widthPx}px`;
       clone.style.height = `${heightPx}px`;
+      const styleClone = styleFix.cloneNode(true) as HTMLStyleElement;
+      clone.prepend(styleClone);
       let serialized = clone.outerHTML;
       if (!/xmlns=/.test(serialized)) {
         serialized = serialized.replace(
