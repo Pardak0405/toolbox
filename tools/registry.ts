@@ -257,7 +257,6 @@ async function convertPowerpointToPdfInBrowser(
   stage.style.position = "fixed";
   stage.style.left = "0";
   stage.style.top = "0";
-  stage.style.opacity = "0";
   stage.style.pointerEvents = "none";
   stage.style.zIndex = "-1";
   stage.style.width = `${widthPx}px`;
