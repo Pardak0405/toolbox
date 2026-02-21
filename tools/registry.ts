@@ -180,6 +180,35 @@ function sortOfficeEntries(names: string[], prefix: string, suffix = ".xml") {
     });
 }
 
+function guessMimeType(name: string) {
+  const lower = name.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".bmp")) return "image/bmp";
+  if (lower.endsWith(".svg")) return "image/svg+xml";
+  return "application/octet-stream";
+}
+
+async function inlinePptxMedia(html: string, zip: JSZip) {
+  const mediaRegex = /(ppt\/media\/[^"')\s]+|media\/[^"')\s]+|\.\.\/media\/[^"')\s]+)/g;
+  const matches = html.match(mediaRegex);
+  if (!matches) return html;
+  const unique = Array.from(new Set(matches));
+  let output = html;
+  for (const rawPath of unique) {
+    const normalized = rawPath.replace(/^(\.\.\/)+/, "");
+    const zipPath = normalized.startsWith("ppt/") ? normalized : `ppt/${normalized}`;
+    const file = zip.file(zipPath);
+    if (!file) continue;
+    const base64 = await file.async("base64");
+    const mime = guessMimeType(zipPath);
+    const dataUrl = `data:${mime};base64,${base64}`;
+    output = output.split(rawPath).join(dataUrl);
+  }
+  return output;
+}
+
 async function extractXmlTexts(zip: JSZip, names: string[], tagSelector: string) {
   const parser = new DOMParser();
   const lines: string[] = [];
@@ -348,6 +377,7 @@ async function convertPowerpointToPdfInBrowser(
   for (const [index, html] of slidesHtml.entries()) {
     const startProgress = Math.round(15 + (index / totalSlides) * 70);
     onProgress?.(startProgress, `슬라이드 렌더링 ${index + 1}/${totalSlides}`);
+    const hydratedHtml = await inlinePptxMedia(html, zip);
     const sandbox = document.createElement("div");
     sandbox.style.width = `${widthPx}px`;
     sandbox.style.height = `${heightPx}px`;
@@ -356,7 +386,7 @@ async function convertPowerpointToPdfInBrowser(
     sandbox.style.transformOrigin = "top left";
     sandbox.style.fontFamily =
       "Noto Sans KR, Apple SD Gothic Neo, Malgun Gothic, Segoe UI, sans-serif";
-    sandbox.innerHTML = html;
+    sandbox.innerHTML = hydratedHtml;
     const styleFix = document.createElement("style");
     styleFix.textContent = `
       * { box-sizing: border-box; }
