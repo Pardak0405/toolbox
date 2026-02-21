@@ -18,11 +18,10 @@ export default function HomePage() {
           <div className="max-w-xl">
             <span className="badge">100% free, no install</span>
             <h1 className="mt-4 font-display text-4xl leading-tight md:text-5xl">
-              {BRAND.slogan}
+              Toolbox - 무료 문서 변환기
             </h1>
             <p className="mt-4 text-base text-muted">
-              Merge, convert, scan, and secure files in a privacy-first browser
-              workspace. Upgrade to local engine for advanced conversions.
+              업로드 없이 빠르게, 내 PC에서 처리하는 안전한 문서 변환기입니다.
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <a

@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   },
   applicationName: "Toolbox",
   description:
-    "업로드 없이 빠르게, 내 PC에서 처리하는 무료 문서 변환기. JPG, PNG, PDF, Word, Excel 변환을 안전하게 지원합니다.",
+    "업로드 없이 빠르게, 내 PC에서 처리하는 무료 문서 변환기. JPG, PNG, PDF, Word, Excel 등 다양한 파일을 안전하게 변환하세요.",
   metadataBase: new URL(getBrandOrigin()),
   manifest: "/manifest.webmanifest",
   icons: {
@@ -36,7 +36,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "Toolbox - 무료 문서 변환기",
-    description: BRAND.slogan,
+    description: "JPG, PNG, PDF, Word, Excel 파일을 업로드 없이 빠르게 변환하세요.",
     images: [
       {
         url: "https://alltoolbox.online/favicon.png",
@@ -70,7 +70,8 @@ export default function RootLayout({
     "@type": "Organization",
     name: BRAND.name,
     url: SITE_URL,
-    logo: "https://alltoolbox.online/favicon.png"
+    logo: "https://alltoolbox.online/favicon.png",
+    description: "업로드 없이 브라우저에서 작동하는 무료 문서 변환기"
   });
 
   return (
