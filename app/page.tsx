@@ -21,7 +21,7 @@ export default function HomePage() {
             <div className="mt-6 flex flex-wrap gap-3">
               <a
                 href="#organize"
-                className="rounded-full bg-ember px-6 py-2 text-sm font-semibold text-white"
+                className="btn-primary rounded-full px-6 py-2 text-sm font-semibold"
               >
                 Explore tools
               </a>
