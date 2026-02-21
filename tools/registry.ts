@@ -254,8 +254,11 @@ async function convertPowerpointToPdfInBrowser(
 
   const stage = document.createElement("div");
   stage.style.position = "fixed";
-  stage.style.left = "-10000px";
+  stage.style.left = "0";
   stage.style.top = "0";
+  stage.style.opacity = "0";
+  stage.style.pointerEvents = "none";
+  stage.style.zIndex = "-1";
   stage.style.width = `${widthPx}px`;
   stage.style.height = `${heightPx}px`;
   stage.style.background = "#ffffff";
@@ -295,6 +298,7 @@ async function convertPowerpointToPdfInBrowser(
     sandbox.style.height = `${heightPx}px`;
     sandbox.style.background = "#ffffff";
     sandbox.style.position = "relative";
+    sandbox.style.transformOrigin = "top left";
     const htmlDoc = parser.parseFromString(html, "text/html");
     htmlDoc.querySelectorAll("script,iframe,object,embed,link").forEach((node) => {
       node.remove();
@@ -314,12 +318,13 @@ async function convertPowerpointToPdfInBrowser(
     stage.appendChild(sandbox);
 
     await waitForAssets(sandbox);
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
     const canvas = await html2canvas(sandbox, {
       backgroundColor: "#ffffff",
       scale,
       useCORS: true,
       allowTaint: true,
-      foreignObjectRendering: true,
+      foreignObjectRendering: false,
       imageTimeout: 5000
     });
     const useJpeg = compressMode !== "none";
