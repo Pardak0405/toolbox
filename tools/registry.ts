@@ -248,12 +248,6 @@ async function analyzePptxStructure(zip: JSZip): Promise<PptxAnalysis> {
   };
 }
 
-function shouldFallbackToImage(resultSize: number, analysis: PptxAnalysis) {
-  if (resultSize > 20000) return false;
-  const contentCount = analysis.textCount + analysis.shapeCount + analysis.imageCount;
-  return contentCount === 0 || resultSize < 20000;
-}
-
 async function convertPowerpointToPdfInBrowser(
   file: File,
   options: Record<string, unknown> = {},
@@ -320,57 +314,10 @@ async function convertPowerpointToPdfInBrowser(
 
   const contentCount = analysis.textCount + analysis.shapeCount + analysis.imageCount;
   if (contentCount === 0) {
-    return buildTextFallbackPdf(
-      "템플릿 구성 요소를 감지했으나 슬라이드 요소를 해석하지 못해 텍스트 중심 안전 모드로 변환되었습니다."
+    throw new Error(
+      "슬라이드 요소를 해석하지 못했습니다. 템플릿/레이아웃 기반 파일일 수 있습니다."
     );
   }
-
-  const buildTextFallbackPdf = async (notice: string): Promise<ToolResult> => {
-    const linesBySlide: string[][] = [];
-    for (const slideName of analysis.slideNames) {
-      const xml = await zip.file(slideName)?.async("string");
-      if (!xml) continue;
-      const slideDoc = parser.parseFromString(xml, "text/xml");
-      const lines = Array.from(slideDoc.querySelectorAll("a\\:t,t"))
-        .map((node) => (node.textContent || "").trim())
-        .filter(Boolean)
-        .slice(0, 140);
-      linesBySlide.push(lines);
-    }
-    if (linesBySlide.length === 0) {
-      linesBySlide.push(["No readable text found in this slide."]);
-    }
-    const fallbackDoc = await PDFDocument.create();
-    const font = await fallbackDoc.embedFont(StandardFonts.Helvetica);
-    for (const [index, lines] of linesBySlide.entries()) {
-      const page = fallbackDoc.addPage([widthPx, heightPx]);
-      page.drawText(`Slide ${index + 1}`, {
-        x: 36,
-        y: heightPx - 36,
-        size: 12,
-        font,
-        color: rgb(0.2, 0.2, 0.2)
-      });
-      let y = heightPx - 60;
-      for (const line of lines) {
-        if (y < 36) break;
-        page.drawText(toWinAnsiSafe(line).slice(0, 140), {
-          x: 36,
-          y,
-          size: 10,
-          font,
-          color: rgb(0.15, 0.15, 0.15)
-        });
-        y -= 14;
-      }
-    }
-    const bytes = await fallbackDoc.save();
-    return {
-      blob: bytesToBlob(bytes, "application/pdf"),
-      fileName: "powerpoint-fallback.pdf",
-      notice
-    };
-  };
 
   const stage = document.createElement("div");
   stage.style.position = "absolute";
@@ -550,17 +497,10 @@ async function convertPowerpointToPdfInBrowser(
 
   stage.remove();
   if (doc.getPageCount() === 0) {
-    return buildTextFallbackPdf(
-      "슬라이드 렌더가 비어 있어 텍스트 중심 안전 모드로 변환되었습니다."
-    );
+    throw new Error("슬라이드 렌더 결과가 비어 있습니다.");
   }
   onProgress?.(95, "PDF 저장 중");
   const bytes = await doc.save();
-  if (shouldFallbackToImage(bytes.length, analysis)) {
-    return buildTextFallbackPdf(
-      "템플릿 구성 요소가 감지되어 텍스트 중심 안전 모드로 변환되었습니다."
-    );
-  }
   return {
     blob: bytesToBlob(bytes, "application/pdf"),
     fileName: "powerpoint-browser.pdf",
