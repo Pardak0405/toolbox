@@ -226,37 +226,92 @@ function resolveRelTarget(baseDir: string, target: string) {
   return stack.join("/");
 }
 
-async function getSlideBackgroundDataUrl(
+type BackgroundInfo = { imageUrl?: string | null; color?: string | null };
+
+async function loadThemeColors(zip: JSZip, parser: DOMParser) {
+  const themeFile =
+    zip.file("ppt/theme/theme1.xml") ||
+    zip.file("ppt/theme/theme.xml") ||
+    zip.file("ppt/theme/theme0.xml");
+  if (!themeFile) return {};
+  const xml = await themeFile.async("string");
+  const doc = parser.parseFromString(xml, "text/xml");
+  const colors: Record<string, string> = {};
+  const scheme = doc.querySelector("a\\:clrScheme,clrScheme");
+  if (!scheme) return colors;
+  Array.from(scheme.children).forEach((node) => {
+    const name = node.localName;
+    const srgb = node.getElementsByTagNameNS("*", "srgbClr")[0];
+    const sys = node.getElementsByTagNameNS("*", "sysClr")[0];
+    const hex = srgb?.getAttribute("val") || sys?.getAttribute("lastClr");
+    if (hex) colors[name] = `#${hex}`;
+  });
+  return colors;
+}
+
+function resolveSchemeColor(node: Element | null, theme: Record<string, string>) {
+  if (!node) return null;
+  const srgb = node.getElementsByTagNameNS("*", "srgbClr")[0];
+  if (srgb?.getAttribute("val")) return `#${srgb.getAttribute("val")}`;
+  const scheme = node.getElementsByTagNameNS("*", "schemeClr")[0];
+  if (scheme?.getAttribute("val")) {
+    const key = scheme.getAttribute("val") as string;
+    const aliasMap: Record<string, string> = {
+      bg1: "lt1",
+      bg2: "lt2",
+      tx1: "dk1",
+      tx2: "dk2"
+    };
+    const resolved = aliasMap[key] || key;
+    return theme[resolved] || null;
+  }
+  const sys = node.getElementsByTagNameNS("*", "sysClr")[0];
+  if (sys?.getAttribute("lastClr")) return `#${sys.getAttribute("lastClr")}`;
+  return null;
+}
+
+async function getSlideBackgroundInfo(
   zip: JSZip,
   slideName: string,
   parser: DOMParser
-) {
+) : Promise<BackgroundInfo | null> {
+  const themeColors = await loadThemeColors(zip, parser);
   const resolveBackgroundFromXml = async (
     xml: string,
     relsPath: string,
     baseDir: string
-  ) => {
+  ): Promise<BackgroundInfo | null> => {
     const doc = parser.parseFromString(xml, "text/xml");
     const blip =
       doc.querySelector("p\\:bg a\\:blip, bg a\\:blip") ||
       doc.querySelector("p\\:bgRef a\\:blip, bgRef a\\:blip");
-    if (!blip) return null;
-    const rId = blip.getAttribute("r:embed") || blip.getAttribute("embed");
-    if (!rId) return null;
-    const relsXml = await zip.file(relsPath)?.async("string");
-    if (!relsXml) return null;
-    const relsDoc = parser.parseFromString(relsXml, "text/xml");
-    const rel = Array.from(relsDoc.getElementsByTagName("Relationship")).find(
-      (node) => node.getAttribute("Id") === rId
-    );
-    const target = rel?.getAttribute("Target");
-    if (!target) return null;
-    const resolved = resolveRelTarget(baseDir, target);
-    const file = zip.file(resolved);
-    if (!file) return null;
-    const base64 = await file.async("base64");
-    const mime = guessMimeType(resolved);
-    return `data:${mime};base64,${base64}`;
+    let imageUrl: string | null = null;
+    if (blip) {
+      const rId = blip.getAttribute("r:embed") || blip.getAttribute("embed");
+      if (rId) {
+        const relsXml = await zip.file(relsPath)?.async("string");
+        if (relsXml) {
+          const relsDoc = parser.parseFromString(relsXml, "text/xml");
+          const rel = Array.from(relsDoc.getElementsByTagName("Relationship")).find(
+            (node) => node.getAttribute("Id") === rId
+          );
+          const target = rel?.getAttribute("Target");
+          if (target) {
+            const resolved = resolveRelTarget(baseDir, target);
+            const file = zip.file(resolved);
+            if (file) {
+              const base64 = await file.async("base64");
+              const mime = guessMimeType(resolved);
+              imageUrl = `data:${mime};base64,${base64}`;
+            }
+          }
+        }
+      }
+    }
+    const solidFill = doc.querySelector("p\\:bg a\\:solidFill, bg a\\:solidFill");
+    const color = resolveSchemeColor(solidFill as Element | null, themeColors);
+    if (!imageUrl && !color) return null;
+    return { imageUrl, color };
   };
 
   const slideXml = await zip.file(slideName)?.async("string");
@@ -468,13 +523,17 @@ async function convertPowerpointToPdfInBrowser(
     onProgress?.(startProgress, `슬라이드 렌더링 ${index + 1}/${totalSlides}`);
     const hydratedHtml = await inlinePptxMedia(html, zip);
     const slideName = analysis.slideNames[index];
-    const bgDataUrl = slideName ? await getSlideBackgroundDataUrl(zip, slideName, parser) : null;
+    const bgInfo = slideName ? await getSlideBackgroundInfo(zip, slideName, parser) : null;
     const sandbox = document.createElement("div");
     sandbox.style.width = `${widthPx}px`;
     sandbox.style.height = `${heightPx}px`;
-    sandbox.style.background = bgDataUrl
-      ? `url('${bgDataUrl}') center / cover no-repeat`
-      : "#ffffff";
+    sandbox.style.backgroundColor = bgInfo?.color || "#ffffff";
+    sandbox.style.backgroundImage = bgInfo?.imageUrl
+      ? `url('${bgInfo.imageUrl}')`
+      : "none";
+    sandbox.style.backgroundRepeat = "no-repeat";
+    sandbox.style.backgroundPosition = "center";
+    sandbox.style.backgroundSize = "cover";
     sandbox.style.position = "relative";
     sandbox.style.transformOrigin = "top left";
     sandbox.style.fontFamily =
@@ -495,7 +554,7 @@ async function convertPowerpointToPdfInBrowser(
     const slideRoot = sandbox.querySelector(".slide-container, .slide") as HTMLElement | null;
     const captureTarget = slideRoot ?? sandbox;
     captureTarget.style.overflow = "hidden";
-    captureTarget.style.background = "transparent";
+    captureTarget.style.backgroundColor = "transparent";
     captureTarget.style.visibility = "visible";
     captureTarget.querySelectorAll("img").forEach((img) => {
       img.loading = "eager";
@@ -523,8 +582,8 @@ async function convertPowerpointToPdfInBrowser(
         );
       }
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}">
-        <rect width="100%" height="100%" fill="#ffffff"></rect>
-        ${bgDataUrl ? `<image href="${bgDataUrl}" x="0" y="0" width="100%" height="100%" preserveAspectRatio="xMidYMid slice"></image>` : ""}
+        <rect width="100%" height="100%" fill="${bgInfo?.color || "#ffffff"}"></rect>
+        ${bgInfo?.imageUrl ? `<image href="${bgInfo.imageUrl}" x="0" y="0" width="100%" height="100%" preserveAspectRatio="xMidYMid slice"></image>` : ""}
         <foreignObject width="100%" height="100%">${serialized}</foreignObject>
       </svg>`;
       const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
@@ -552,7 +611,7 @@ async function convertPowerpointToPdfInBrowser(
     const renderSlide = async (useForeignObject: boolean) => {
       try {
         return await html2canvas(captureTarget, {
-          backgroundColor: null,
+          backgroundColor: bgInfo?.color || "#ffffff",
           width: widthPx,
           height: heightPx,
           scale,
@@ -570,20 +629,20 @@ async function convertPowerpointToPdfInBrowser(
     let canvas: HTMLCanvasElement | null = null;
     let renderError: Error | null = null;
     try {
-      canvas = await renderViaSvg();
+      canvas = await renderSlide(false);
     } catch (error) {
       renderError = error as Error;
     }
     if (!canvas) {
       try {
-        canvas = await renderSlide(false);
+        canvas = await renderSlide(true);
       } catch (error) {
         renderError = error as Error;
       }
     }
     if (!canvas) {
       try {
-        canvas = await renderSlide(true);
+        canvas = await renderViaSvg();
       } catch (error) {
         renderError = error as Error;
       }
