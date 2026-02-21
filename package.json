@@ -13,8 +13,8 @@
     "start": "next start",
     "lint": "eslint",
     "smoke": "node scripts/smoke-test.mjs",
-    "security:audit": "npm audit --audit-level=moderate",
-    "security:audit:prod": "npm audit --omit=dev --audit-level=moderate"
+    "security:audit": "npm audit --omit=dev --audit-level=high",
+    "security:audit:prod": "npm audit --omit=dev --audit-level=high"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
