@@ -4,6 +4,11 @@ import HomeTrustSeoSection from "@/app/_components/HomeTrustSeoSection";
 import ToolGrid from "@/app/_components/ToolGrid";
 import { allTools, categories } from "@/tools/registry";
 import { BRAND } from "@/config/brand";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Toolbox - 무료 문서 변환기"
+};
 
 export default function HomePage() {
   return (

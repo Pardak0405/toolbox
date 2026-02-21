@@ -20,8 +20,13 @@ const sora = Sora({
 });
 
 export const metadata: Metadata = {
-  title: `${BRAND.name} - 무료 문서 변환기`,
-  description: BRAND.slogan,
+  title: {
+    default: "Toolbox - 무료 문서 변환기",
+    template: "%s | Toolbox"
+  },
+  applicationName: "Toolbox",
+  description:
+    "업로드 없이 빠르게, 내 PC에서 처리하는 무료 문서 변환기. JPG, PNG, PDF, Word, Excel 변환을 안전하게 지원합니다.",
   metadataBase: new URL(getBrandOrigin()),
   manifest: "/manifest.webmanifest",
   icons: {
@@ -30,7 +35,7 @@ export const metadata: Metadata = {
     apple: "/icon-192.png"
   },
   openGraph: {
-    title: `${BRAND.name} - 무료 문서 변환기`,
+    title: "Toolbox - 무료 문서 변환기",
     description: BRAND.slogan,
     images: [
       {
