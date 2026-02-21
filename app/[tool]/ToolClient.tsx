@@ -165,53 +165,21 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
 
     try {
       const finalOptions = { ...defaultOptions, ...options };
-      const isPptToPdf = tool.id === "powerpoint-to-pdf";
-      const selectedMode = String(finalOptions.mode || "local-high");
-      const shouldPreferLocal = isPptToPdf && selectedMode === "local-high" && tool.runLocal;
-      let nextResult;
-
-      if (shouldPreferLocal && tool.runLocal) {
-        setStatus("Running local high-quality conversion");
-        try {
-          nextResult = await tool.runLocal(
-            items.map((item) => item.file),
-            finalOptions,
-            { signal: controller.signal }
-          );
-          setModeNotice("고품질 로컬 엔진 모드로 변환했습니다. 텍스트 선택/레이아웃 보존에 유리합니다.");
-        } catch (localError) {
-          console.error(localError);
-          setStatus("Local mode unavailable. Falling back to browser fast mode");
-          nextResult = await tool.runBrowser(
-            items.map((item) => item.file),
-            finalOptions,
-            (nextProgress, nextStatus) => {
-              setProgress(nextProgress);
-              setStatus(nextStatus);
-            },
-            { signal: controller.signal }
-          );
-          setModeNotice(
-            "브라우저 모드는 일부 폰트/레이아웃이 달라질 수 있습니다. 고품질 변환을 위해 로컬 엔진을 권장합니다."
-          );
-        }
-      } else {
-        nextResult = await tool.runBrowser(
-          items.map((item) => item.file),
-          finalOptions,
-          (nextProgress, nextStatus) => {
-            setProgress(nextProgress);
-            setStatus(nextStatus);
-          },
-          { signal: controller.signal }
+      const nextResult = await tool.runBrowser(
+        items.map((item) => item.file),
+        finalOptions,
+        (nextProgress, nextStatus) => {
+          setProgress(nextProgress);
+          setStatus(nextStatus);
+        },
+        { signal: controller.signal }
+      );
+      if (tool.id === "powerpoint-to-pdf") {
+        setModeNotice(
+          "브라우저 모드는 일부 폰트/레이아웃이 달라질 수 있습니다."
         );
-        if (isPptToPdf) {
-          setModeNotice(
-            "브라우저 모드는 일부 폰트/레이아웃이 달라질 수 있습니다. 고품질 변환을 위해 로컬 엔진을 권장합니다."
-          );
-        } else {
-          setModeNotice("");
-        }
+      } else {
+        setModeNotice("");
       }
       if (result?.url) URL.revokeObjectURL(result.url);
       setProgress(100);
@@ -248,13 +216,13 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
           <p className="text-sm text-muted">{tool.description}</p>
         </div>
         <div className="mt-6">
-          <DropzoneUploader
-            accept={accept}
-            multiple={multiTools.has(tool.id)}
-            capture={tool.id === "scan-to-pdf" ? "environment" : undefined}
-            onFiles={handleFiles}
-            helper="로컬 엔진 없이도 브라우저에서 처리됩니다. 실패 시 자동으로 fallback 리포트를 생성합니다."
-          />
+            <DropzoneUploader
+              accept={accept}
+              multiple={multiTools.has(tool.id)}
+              capture={tool.id === "scan-to-pdf" ? "environment" : undefined}
+              onFiles={handleFiles}
+            helper="파일은 브라우저에서 처리됩니다. 실패 시 자동으로 fallback 리포트를 생성합니다."
+            />
         </div>
       </section>
 
@@ -377,8 +345,9 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
           <article className="rounded-3xl bg-white p-8">
             <h2 className="font-display text-2xl">보안 안내</h2>
             <p className="mt-4 text-sm text-muted">
-              기본 모드는 브라우저 내부 처리입니다. 고품질 변환, 대용량 문서, 오피스
-              레이아웃 유지가 필요한 경우 로컬 엔진 모드 사용을 권장합니다.
+              기본 모드는 브라우저 내부 처리입니다. 고품질 변환이나 대용량 문서는 처리
+              시간이 길어질 수 있으므로, 필요하면 파일을 분할하거나 옵션을 조정해
+              실행하는 것을 권장합니다.
             </p>
           </article>
 

@@ -6,7 +6,6 @@
 - Next.js (App Router) + TypeScript
 - Tailwind CSS
 - pdf-lib, pdfjs-dist, tesseract.js
-- local-engine (Express)
 
 ## Commands
 - `npm run dev`

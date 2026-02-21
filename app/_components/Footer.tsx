@@ -28,7 +28,7 @@ export default function Footer() {
       </div>
       <p className="mt-6 text-xs text-muted">
         Ads appear only in non-intrusive slots. Processing happens in your
-        browser unless you opt into the local engine.
+        browser by default.
       </p>
       <p className="mt-2 text-xs text-muted">
         Last updated: 2026-02-20

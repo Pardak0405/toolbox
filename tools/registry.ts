@@ -41,10 +41,9 @@ import {
 import { extractPdfText, renderPdfPageToCanvas } from "@/app/_lib/pdfjs";
 import { diffCanvases } from "@/app/_lib/compare";
 import { runOcrOnCanvas } from "@/app/_lib/ocr";
-import { callLocalEngine } from "@/app/_lib/local-engine";
 import { FILE_LIMITS } from "@/config/security";
 
-export type ToolEngine = "browser" | "local" | "hybrid";
+export type ToolEngine = "browser";
 
 export type ToolOptionField = {
   id: string;
@@ -94,11 +93,6 @@ export type ToolDefinition = {
     files: File[],
     options: Record<string, unknown>,
     onProgress?: (progress: number, status: string) => void,
-    context?: { signal?: AbortSignal }
-  ) => Promise<ToolResult>;
-  runLocal?: (
-    files: File[],
-    options: Record<string, unknown>,
     context?: { signal?: AbortSignal }
   ) => Promise<ToolResult>;
 };
@@ -365,16 +359,6 @@ async function convertHtmlToPdfInBrowser(files: File[], options: Record<string, 
   return textPdfFromLines("HTML to PDF (Browser Text Mode)", body);
 }
 
-const localRunner = async (
-  toolId: string,
-  files: File[],
-  options: Record<string, unknown>,
-  context?: { signal?: AbortSignal }
-) => {
-  const blob = await callLocalEngine({ toolId, files, options, signal: context?.signal });
-  return { blob, fileName: `${toolId}-output.zip` };
-};
-
 export const categories = [
   "Organize",
   "Optimize",
@@ -548,14 +532,13 @@ export const toolsRegistry: ToolDefinition[] = [
         ]
       }
     ],
-    engine: "hybrid",
+    engine: "browser",
     icon: FileMinus,
     runBrowser: async (files) => ({
       blob: files[0],
       fileName: "compressed.pdf"
     }),
-    runLocal: (files, options) =>
-      localRunner("compress-pdf", files, options)
+    // browser-only
   },
   {
     id: "repair-pdf",
@@ -566,14 +549,13 @@ export const toolsRegistry: ToolDefinition[] = [
     inputTypes: ["pdf"],
     outputTypes: ["pdf"],
     optionsSchema: [],
-    engine: "hybrid",
+    engine: "browser",
     icon: WandSparkles,
     runBrowser: async (files) => ({
       blob: files[0],
       fileName: "repaired.pdf"
     }),
-    runLocal: (files, options) =>
-      localRunner("repair-pdf", files, options)
+    // browser-only
   },
   {
     id: "ocr-pdf",
@@ -648,14 +630,13 @@ export const toolsRegistry: ToolDefinition[] = [
     inputTypes: ["doc", "docx"],
     outputTypes: ["pdf"],
     optionsSchema: [],
-    engine: "hybrid",
+    engine: "browser",
     icon: FileType2,
     runBrowser: async (files) => ({
       blob: await convertWordToPdfInBrowser(files[0]),
       fileName: "word-browser.pdf"
     }),
-    runLocal: (files, options) =>
-      localRunner("word-to-pdf", files, options)
+    // browser-only
   },
   {
     id: "powerpoint-to-pdf",
@@ -666,17 +647,6 @@ export const toolsRegistry: ToolDefinition[] = [
     inputTypes: ["ppt", "pptx"],
     outputTypes: ["pdf"],
     optionsSchema: [
-      {
-        id: "mode",
-        label: "변환 모드",
-        type: "select",
-        defaultValue: "local-high",
-        options: [
-          { label: "고품질(텍스트/레이아웃 유지) — 로컬 엔진", value: "local-high" },
-          { label: "빠른 변환(이미지 기반) — 브라우저", value: "browser-fast" }
-        ],
-        help: "고품질 모드: 텍스트 선택 가능 · 슬라이드 크기/배경/도형 유지"
-      },
       {
         id: "quality",
         label: "출력 품질",
@@ -718,14 +688,13 @@ export const toolsRegistry: ToolDefinition[] = [
         defaultValue: true
       }
     ],
-    engine: "hybrid",
+    engine: "browser",
     icon: FileType2,
     runBrowser: async (files) => ({
       blob: await convertPowerpointToPdfInBrowser(files[0]),
       fileName: "powerpoint-browser.pdf"
     }),
-    runLocal: (files, options) =>
-      localRunner("powerpoint-to-pdf", files, options)
+    // browser-only
   },
   {
     id: "excel-to-pdf",
@@ -736,14 +705,13 @@ export const toolsRegistry: ToolDefinition[] = [
     inputTypes: ["xls", "xlsx"],
     outputTypes: ["pdf"],
     optionsSchema: [],
-    engine: "hybrid",
+    engine: "browser",
     icon: FileType2,
     runBrowser: async (files) => ({
       blob: await convertExcelToPdfInBrowser(files[0]),
       fileName: "excel-browser.pdf"
     }),
-    runLocal: (files, options) =>
-      localRunner("excel-to-pdf", files, options)
+    // browser-only
   },
   {
     id: "html-to-pdf",
@@ -761,14 +729,13 @@ export const toolsRegistry: ToolDefinition[] = [
         placeholder: "https://example.com"
       }
     ],
-    engine: "hybrid",
+    engine: "browser",
     icon: FileUp,
     runBrowser: async (files, options) => ({
       blob: await convertHtmlToPdfInBrowser(files, options),
       fileName: "browser-html.pdf"
     }),
-    runLocal: (files, options) =>
-      localRunner("html-to-pdf", files, options)
+    // browser-only
   },
   {
     id: "pdf-to-jpg",
@@ -817,7 +784,7 @@ export const toolsRegistry: ToolDefinition[] = [
         ]
       }
     ],
-    engine: "hybrid",
+    engine: "browser",
     icon: FileDown,
     runBrowser: async (files) => {
       const { Document, Packer, Paragraph } = await import("docx");
@@ -835,8 +802,7 @@ export const toolsRegistry: ToolDefinition[] = [
       const blob = await Packer.toBlob(doc);
       return { blob, fileName: "extracted.docx" };
     },
-    runLocal: (files, options) =>
-      localRunner("pdf-to-word", files, options)
+    // browser-only
   },
   {
     id: "pdf-to-powerpoint",
@@ -858,7 +824,7 @@ export const toolsRegistry: ToolDefinition[] = [
         ]
       }
     ],
-    engine: "hybrid",
+    engine: "browser",
     icon: FileDown,
     runBrowser: async (files, _options, onProgress) => {
       const PptxGenJS = (await import("pptxgenjs")).default;
@@ -895,8 +861,7 @@ export const toolsRegistry: ToolDefinition[] = [
       }
       return { blob, fileName: "slides.pptx" };
     },
-    runLocal: (files, options) =>
-      localRunner("pdf-to-powerpoint", files, options)
+    // browser-only
   },
   {
     id: "pdf-to-excel",
@@ -907,7 +872,7 @@ export const toolsRegistry: ToolDefinition[] = [
     inputTypes: ["pdf"],
     outputTypes: ["csv"],
     optionsSchema: [],
-    engine: "hybrid",
+    engine: "browser",
     icon: FileDown,
     runBrowser: async (files) => {
       const text = await extractPdfText(files[0]);
@@ -919,8 +884,7 @@ export const toolsRegistry: ToolDefinition[] = [
       const blob = new Blob([csv], { type: "text/csv" });
       return { blob, fileName: "tables.csv" };
     },
-    runLocal: (files, options) =>
-      localRunner("pdf-to-excel", files, options)
+    // browser-only
   },
   {
     id: "pdf-to-pdfa",
@@ -931,14 +895,13 @@ export const toolsRegistry: ToolDefinition[] = [
     inputTypes: ["pdf"],
     outputTypes: ["pdf"],
     optionsSchema: [],
-    engine: "hybrid",
+    engine: "browser",
     icon: FileDown,
     runBrowser: async (files) => ({
       blob: files[0],
       fileName: "archive.pdf"
     }),
-    runLocal: (files, options) =>
-      localRunner("pdf-to-pdfa", files, options)
+    // browser-only
   },
   {
     id: "rotate-pdf",
@@ -1077,14 +1040,13 @@ export const toolsRegistry: ToolDefinition[] = [
         type: "text"
       }
     ],
-    engine: "hybrid",
+    engine: "browser",
     icon: Unlock,
     runBrowser: async (files) => ({
       blob: files[0],
       fileName: "unlocked.pdf"
     }),
-    runLocal: (files, options) =>
-      localRunner("unlock-pdf", files, options)
+    // browser-only
   },
   {
     id: "protect-pdf",
@@ -1101,14 +1063,13 @@ export const toolsRegistry: ToolDefinition[] = [
         type: "text"
       }
     ],
-    engine: "hybrid",
+    engine: "browser",
     icon: Lock,
     runBrowser: async (files) => ({
       blob: files[0],
       fileName: "protected.pdf"
     }),
-    runLocal: (files, options) =>
-      localRunner("protect-pdf", files, options)
+    // browser-only
   },
   {
     id: "sign-pdf",
@@ -1206,7 +1167,7 @@ export const toolsRegistry: ToolDefinition[] = [
         ]
       }
     ],
-    engine: "hybrid",
+    engine: "browser",
     icon: WandSparkles,
     runBrowser: async (files, options) => {
       const target = String(options.target || "en");
@@ -1227,8 +1188,7 @@ ${text}`;
       const blob = bytesToBlob(await doc.save(), "application/pdf");
       return { blob, fileName: "translated.pdf" };
     },
-    runLocal: (files, options) =>
-      localRunner("translate-pdf", files, options)
+    // browser-only
   }
 ];
 
@@ -1251,15 +1211,12 @@ function buildDefaultToolContent(tool: ToolDefinition): ToolContent {
     optionLabels.length > 0
       ? `${tool.title}에서는 ${optionLabels.join(", ")} 옵션을 조합해 결과를 세밀하게 조정할 수 있습니다.`
       : `${tool.title}는 복잡한 설정 없이 업로드 후 바로 실행해도 안정적인 결과를 제공하도록 설계되었습니다.`;
-  const engineHint =
-    tool.engine === "browser"
-      ? "기본 브라우저 모드만으로도 주요 작업을 빠르게 처리할 수 있습니다."
-      : "브라우저 모드로 바로 시작하고, 품질이 중요하거나 대용량 문서라면 로컬 엔진 모드를 권장합니다.";
+  const engineHint = "기본 브라우저 모드만으로도 주요 작업을 빠르게 처리할 수 있습니다.";
 
   return {
     intro:
       `${tool.title}는 ${tool.category} 작업을 빠르게 처리하기 위한 전용 도구입니다. 문서 형식 변환, 페이지 정리, 보안 작업처럼 반복되는 업무를 클릭 몇 번으로 끝내도록 구성했으며, 업로드 후 옵션을 설정하면 즉시 결과물을 받을 수 있습니다.\n\n` +
-      `특히 ${tool.title}는 실무에서 발생하는 파일 전달 이슈를 줄이는 데 유용합니다. 브라우저에서 우선 처리해 속도를 확보하고, 필요 시 로컬 엔진으로 확장해 품질과 호환성을 끌어올릴 수 있어 개인 사용자와 팀 협업 모두에 적합합니다.`,
+      `특히 ${tool.title}는 실무에서 발생하는 파일 전달 이슈를 줄이는 데 유용합니다. 브라우저에서 바로 처리해 속도를 확보하고, 옵션을 조정해 품질과 호환성을 끌어올릴 수 있어 개인 사용자와 팀 협업 모두에 적합합니다.`,
     useCases: [
       `${tool.title}를 이용해 회의 전 문서를 최종 제출 형식으로 빠르게 정리할 수 있습니다.`,
       `외부 공유 전에 ${tool.title}로 민감한 페이지나 포맷 문제를 점검하고 정리할 수 있습니다.`,
@@ -1278,7 +1235,7 @@ function buildDefaultToolContent(tool: ToolDefinition): ToolContent {
     faq: [
       {
         q: "파일이 서버로 업로드되나요?",
-        a: `${tool.title}는 기본적으로 브라우저에서 처리됩니다. 로컬 엔진 버튼을 직접 실행하는 경우에만 사용자의 PC 로컬 엔진으로 전송됩니다.`
+        a: `${tool.title}는 기본적으로 브라우저에서 처리됩니다. 업로드된 파일은 서버로 전송되지 않으며 브라우저 세션 내에서만 사용됩니다.`
       },
       {
         q: "파일은 저장되나요?",
@@ -1290,15 +1247,15 @@ function buildDefaultToolContent(tool: ToolDefinition): ToolContent {
       },
       {
         q: "대용량 파일은 어떻게 되나요?",
-        a: "브라우저 메모리 한계에 근접하면 속도가 느려질 수 있습니다. 이 경우 파일을 분할하거나 로컬 엔진 모드로 전환하는 것을 권장합니다."
+        a: "브라우저 메모리 한계에 근접하면 속도가 느려질 수 있습니다. 이 경우 파일을 분할하거나 페이지 범위를 나눠 처리하는 것을 권장합니다."
       },
       {
         q: "변환 품질이 낮을 때는 어떻게 하나요?",
-        a: `${tool.title} 옵션에서 품질 관련 항목을 먼저 조정하고, 결과가 부족하면 로컬 엔진으로 고정밀 변환을 시도해 보세요.`
+        a: `${tool.title} 옵션에서 품질 관련 항목을 먼저 조정하고, 결과가 부족하면 해상도나 페이지 범위를 조정해 다시 실행해 보세요.`
       },
       {
-        q: "로컬 엔진이 필요한 경우는?",
-        a: `복잡한 레이아웃 유지, 오피스 문서 고정밀 변환, 대용량 일괄 처리처럼 브라우저 한계를 넘는 작업에서는 ${tool.title}의 로컬 엔진 모드가 필요합니다.`
+        q: "처리 시간이 길어질 때는?",
+        a: `파일 크기나 페이지 수가 많으면 처리 시간이 길어질 수 있습니다. 페이지 범위를 나누거나 파일을 분할해 단계적으로 처리하면 안정성이 높아집니다.`
       }
     ],
     related: getCrossCategoryRelated(tool)
@@ -1333,7 +1290,7 @@ const TOOL_CONTENT_OVERRIDES: Record<string, Partial<ToolContent>> = {
     tips: [
       "언어 옵션은 반드시 문서 언어와 맞추세요. 잘못 선택하면 오인식 비율이 빠르게 올라갑니다.",
       "기울어진 스캔본은 먼저 보정한 뒤 OCR을 수행하면 결과가 안정적입니다.",
-      "고정밀 결과가 필요하면 로컬 엔진 OCR 또는 후속 수동 교정을 병행하세요."
+      "고정밀 결과가 필요하면 해상도를 높이거나 후속 수동 교정을 병행하세요."
     ]
   },
   "protect-pdf": {
@@ -1390,7 +1347,7 @@ export function getToolMetaDescription(tool: ToolDefinition) {
     `${tool.title}를 브라우저에서 빠르게 실행하세요. ${tool.description} ` +
     "파일 업로드, 옵션 선택, 실행 및 다운로드까지 한 화면에서 처리할 수 있습니다.";
   if (description.length < 100) {
-    description += " 대용량이나 고품질 결과가 필요하면 로컬 엔진 모드를 함께 사용할 수 있습니다.";
+    description += " 대용량 파일은 페이지 범위를 나눠 실행하면 안정적입니다.";
   }
   if (description.length > 150) {
     description = `${description.slice(0, 147)}...`;
