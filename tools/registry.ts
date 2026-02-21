@@ -196,73 +196,107 @@ async function extractXmlTexts(zip: JSZip, names: string[], tagSelector: string)
   return lines;
 }
 
-async function convertPowerpointToPdfInBrowser(file: File) {
+async function convertPowerpointToPdfInBrowser(
+  file: File,
+  options: Record<string, unknown> = {}
+) {
+  const { pptxToHtml } = await import("@jvmr/pptx-to-html");
+  const html2canvas = (await import("html2canvas")).default;
   const zip = await JSZip.loadAsync(await file.arrayBuffer());
   const parser = new DOMParser();
   const presentationXml = await zip.file("ppt/presentation.xml")?.async("string");
-  let widthPt = 960;
-  let heightPt = 540;
+  let widthPx = 960;
+  let heightPx = 540;
   if (presentationXml) {
     const presentationDoc = parser.parseFromString(presentationXml, "text/xml");
     const slideSize = presentationDoc.querySelector("p\\:sldSz,sldSz");
     const cx = Number(slideSize?.getAttribute("cx") || "0");
     const cy = Number(slideSize?.getAttribute("cy") || "0");
     if (cx > 0 && cy > 0) {
-      widthPt = Math.max(200, Math.min(2000, cx / 12700));
-      heightPt = Math.max(200, Math.min(2000, cy / 12700));
+      widthPx = Math.max(320, Math.min(2200, Math.round(cx / 9525)));
+      heightPx = Math.max(180, Math.min(2200, Math.round(cy / 9525)));
     }
   }
 
-  const slideNames = sortOfficeEntries(Object.keys(zip.files), "ppt/slides/slide");
-  const scale = 1.6;
-  const canvasWidth = Math.round(widthPt * scale);
-  const canvasHeight = Math.round(heightPt * scale);
+  const keepMetadata = Boolean(options.keepMetadata);
+  const quality = String(options.quality || "high");
+  const compressMode = String(options.compressMode || "none");
+  const scale =
+    quality === "small"
+      ? 1
+      : quality === "balanced"
+        ? 1.4
+        : 1.8;
+
+  const slidesHtml = await pptxToHtml(await file.arrayBuffer(), {
+    width: widthPx,
+    height: heightPx,
+    scaleToFit: true,
+    domParserFactory: () => new DOMParser()
+  });
+
   const doc = await PDFDocument.create();
-
-  for (const slideName of slideNames) {
-    const xml = await zip.file(slideName)?.async("string");
-    const slideDoc = parser.parseFromString(xml || "", "text/xml");
-    const textNodes = Array.from(slideDoc.querySelectorAll("a\\:t,t"));
-    const lines = textNodes
-      .map((node) => toWinAnsiSafe(node.textContent || ""))
-      .filter(Boolean)
-      .slice(0, 120);
-
-    const canvas = document.createElement("canvas");
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) continue;
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "#1f2937";
-    ctx.font = `${Math.max(16, Math.round(canvas.height * 0.04))}px sans-serif`;
-    ctx.textBaseline = "top";
-    let y = Math.round(canvas.height * 0.08);
-    const lineHeight = Math.round(canvas.height * 0.055);
-    for (const line of lines) {
-      if (y > canvas.height - lineHeight) break;
-      ctx.fillText(line.slice(0, 120), Math.round(canvas.width * 0.06), y);
-      y += lineHeight;
+  if (keepMetadata) {
+    const coreXml = await zip.file("docProps/core.xml")?.async("string");
+    if (coreXml) {
+      const coreDoc = parser.parseFromString(coreXml, "text/xml");
+      const title = coreDoc.querySelector("dc\\:title,title")?.textContent?.trim();
+      const creator = coreDoc.querySelector("dc\\:creator,creator")?.textContent?.trim();
+      const subject = coreDoc.querySelector("dc\\:subject,subject")?.textContent?.trim();
+      const keywords = coreDoc.querySelector("cp\\:keywords,keywords")?.textContent?.trim();
+      if (title) doc.setTitle(title);
+      if (creator) doc.setAuthor(creator);
+      if (subject) doc.setSubject(subject);
+      if (keywords) doc.setKeywords([keywords]);
     }
-    if (lines.length === 0) {
-      ctx.fillStyle = "#6b7280";
-      ctx.fillText("No extractable text found on this slide.", Math.round(canvas.width * 0.06), y);
-    }
-
-    const pngBlob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/png")
-    );
-    if (!pngBlob) continue;
-    const pngBytes = await pngBlob.arrayBuffer();
-    const image = await doc.embedPng(pngBytes);
-    const page = doc.addPage([widthPt, heightPt]);
-    page.drawImage(image, { x: 0, y: 0, width: widthPt, height: heightPt });
   }
 
+  const stage = document.createElement("div");
+  stage.style.position = "fixed";
+  stage.style.left = "-10000px";
+  stage.style.top = "0";
+  stage.style.width = `${widthPx}px`;
+  stage.style.height = `${heightPx}px`;
+  stage.style.background = "#ffffff";
+  stage.style.overflow = "hidden";
+  document.body.appendChild(stage);
+
+  for (const html of slidesHtml) {
+    const sandbox = document.createElement("div");
+    sandbox.style.width = `${widthPx}px`;
+    sandbox.style.height = `${heightPx}px`;
+    sandbox.style.background = "#ffffff";
+    sandbox.style.position = "relative";
+    const htmlDoc = parser.parseFromString(html, "text/html");
+    htmlDoc.querySelectorAll("script,iframe,object,embed,link").forEach((node) => {
+      node.remove();
+    });
+    sandbox.innerHTML = htmlDoc.body?.innerHTML || html;
+    stage.innerHTML = "";
+    stage.appendChild(sandbox);
+
+    const canvas = await html2canvas(sandbox, {
+      backgroundColor: "#ffffff",
+      scale,
+      useCORS: true
+    });
+    const useJpeg = compressMode !== "none";
+    const jpegQuality =
+      compressMode === "high" ? 0.55 : compressMode === "medium" ? 0.7 : 0.85;
+    const blob = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, useJpeg ? "image/jpeg" : "image/png", jpegQuality)
+    );
+    if (!blob) continue;
+    const bytes = await blob.arrayBuffer();
+    const image = useJpeg ? await doc.embedJpg(bytes) : await doc.embedPng(bytes);
+    const page = doc.addPage([widthPx, heightPx]);
+    page.drawImage(image, { x: 0, y: 0, width: widthPx, height: heightPx });
+  }
+
+  stage.remove();
   if (doc.getPageCount() === 0) {
-    return textPdfFromLines("PowerPoint to PDF (Browser Fast Mode)", [
-      "No readable slide data found. Try local high-quality mode for better fidelity."
+    return textPdfFromLines("PowerPoint to PDF (Browser Render Mode)", [
+      "No readable slide data found. Try smaller files or check PPTX integrity."
     ]);
   }
   return bytesToBlob(await doc.save(), "application/pdf");
@@ -690,8 +724,8 @@ export const toolsRegistry: ToolDefinition[] = [
     ],
     engine: "browser",
     icon: FileType2,
-    runBrowser: async (files) => ({
-      blob: await convertPowerpointToPdfInBrowser(files[0]),
+    runBrowser: async (files, options) => ({
+      blob: await convertPowerpointToPdfInBrowser(files[0], options),
       fileName: "powerpoint-browser.pdf"
     }),
     // browser-only
