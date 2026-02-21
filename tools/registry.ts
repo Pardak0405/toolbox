@@ -103,6 +103,17 @@ function bytesToBlob(bytes: Uint8Array, type: string) {
   return new Blob([copy], { type });
 }
 
+function dataUrlToBytes(dataUrl: string) {
+  const [meta, base64] = dataUrl.split(",");
+  if (!base64) return new Uint8Array();
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
 async function zipBlobs(blobs: Blob[], baseName: string, extension: string) {
   const zip = new JSZip();
   blobs.forEach((blob, index) => {
@@ -377,9 +388,51 @@ async function convertPowerpointToPdfInBrowser(
       return white / total > 0.97;
     };
 
-    let canvas = await renderSlide(false);
-    if (isMostlyWhite(canvas)) {
-      canvas = await renderSlide(true);
+    let canvas: HTMLCanvasElement | null = null;
+    let renderError: Error | null = null;
+    try {
+      canvas = await renderSlide(false);
+    } catch (error) {
+      renderError = error as Error;
+    }
+    if (!canvas || isMostlyWhite(canvas)) {
+      try {
+        canvas = await renderSlide(true);
+      } catch (error) {
+        renderError = error as Error;
+      }
+    }
+
+    if (!canvas || isMostlyWhite(canvas)) {
+      try {
+        const domToImage = await import("dom-to-image-more");
+        const toPng =
+          (domToImage as unknown as { toPng?: Function }).toPng ||
+          (domToImage as unknown as { default?: { toPng?: Function } }).default?.toPng ||
+          (domToImage as unknown as { default?: Function }).default;
+        if (!toPng) {
+          throw new Error("dom-to-image-more not available");
+        }
+        const dataUrl = await toPng(captureTarget, {
+          cacheBust: true,
+          width: widthPx,
+          height: heightPx,
+          style: { background: "#ffffff" }
+        });
+        const bytes = dataUrlToBytes(dataUrl);
+        if (bytes.length === 0) {
+          throw new Error("dom-to-image produced empty data");
+        }
+        const image = await doc.embedPng(bytes);
+        const page = doc.addPage([widthPx, heightPx]);
+        page.drawImage(image, { x: 0, y: 0, width: widthPx, height: heightPx });
+        continue;
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : "dom-to-image failed";
+        throw new Error(
+          renderError ? `${renderError.message} / ${detail}` : detail
+        );
+      }
     }
     const useJpeg = compressMode !== "none";
     const jpegQuality =
