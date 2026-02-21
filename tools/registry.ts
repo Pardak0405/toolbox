@@ -715,10 +715,7 @@ async function convertPowerpointToPdfInBrowser(
   };
 
   const totalSlides = Math.max(1, slidesHtml.length);
-  const templateNotice =
-    analysis.smartArtCount > 0 || analysis.themeCount > 0 || analysis.masterCount > 0
-      ? "복잡한 템플릿이 감지되어 레이아웃 유지 모드로 변환되었습니다."
-      : "";
+  const templateNotice = "";
   const renderedImages: File[] = [];
   for (const [index, html] of slidesHtml.entries()) {
     const startProgress = Math.round(15 + (index / totalSlides) * 70);
