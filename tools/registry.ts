@@ -260,13 +260,13 @@ async function convertPowerpointToPdfInBrowser(
   }
 
   const stage = document.createElement("div");
-  stage.style.position = "fixed";
-  stage.style.left = "-10000px";
+  stage.style.position = "absolute";
+  stage.style.left = "0";
   stage.style.top = "0";
   stage.style.pointerEvents = "none";
   stage.style.zIndex = "-1";
   stage.style.visibility = "visible";
-  stage.style.opacity = "1";
+  stage.style.opacity = "0.01";
   stage.style.width = `${widthPx}px`;
   stage.style.height = `${heightPx}px`;
   stage.style.background = "transparent";
@@ -323,11 +323,7 @@ async function convertPowerpointToPdfInBrowser(
       node.remove();
     });
     const slideRoot = sandbox.firstElementChild as HTMLElement | null;
-    const innerSlide =
-      slideRoot?.classList.contains("slide-container")
-        ? (slideRoot.querySelector(".slide") as HTMLElement | null)
-        : null;
-    const captureTarget = innerSlide ?? slideRoot ?? sandbox;
+    const captureTarget = slideRoot ?? sandbox;
     captureTarget.style.overflow = "visible";
     captureTarget.style.background = "transparent";
     captureTarget.style.visibility = "visible";
