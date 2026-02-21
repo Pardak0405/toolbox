@@ -339,6 +339,40 @@ async function convertPowerpointToPdfInBrowser(
 
     await waitForAssets(captureTarget);
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    const renderViaSvg = async () => {
+      const clone = captureTarget.cloneNode(true) as HTMLElement;
+      clone.style.width = `${widthPx}px`;
+      clone.style.height = `${heightPx}px`;
+      let serialized = clone.outerHTML;
+      if (!/xmlns=/.test(serialized)) {
+        serialized = serialized.replace(
+          /^<([a-zA-Z0-9-]+)/,
+          '<$1 xmlns="http://www.w3.org/1999/xhtml"'
+        );
+      }
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}"><foreignObject width="100%" height="100%">${serialized}</foreignObject></svg>`;
+      const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      const imageLoaded = new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("SVG image load failed"));
+      });
+      img.src = url;
+      await imageLoaded;
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(widthPx * scale);
+      canvas.height = Math.round(heightPx * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        throw new Error("SVG canvas context missing");
+      }
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      return canvas;
+    };
+
     const renderSlide = async (useForeignObject: boolean) => {
       try {
         return await html2canvas(captureTarget, {
@@ -360,9 +394,16 @@ async function convertPowerpointToPdfInBrowser(
     let canvas: HTMLCanvasElement | null = null;
     let renderError: Error | null = null;
     try {
-      canvas = await renderSlide(false);
+      canvas = await renderViaSvg();
     } catch (error) {
       renderError = error as Error;
+    }
+    if (!canvas) {
+      try {
+        canvas = await renderSlide(false);
+      } catch (error) {
+        renderError = error as Error;
+      }
     }
     if (!canvas) {
       try {
@@ -371,40 +412,9 @@ async function convertPowerpointToPdfInBrowser(
         renderError = error as Error;
       }
     }
-
     if (!canvas) {
-      try {
-        const clone = captureTarget.cloneNode(true) as HTMLElement;
-        clone.style.width = `${widthPx}px`;
-        clone.style.height = `${heightPx}px`;
-        const serialized = new XMLSerializer().serializeToString(clone);
-        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}"><foreignObject width="100%" height="100%">${serialized}</foreignObject></svg>`;
-        const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        const imageLoaded = new Promise<void>((resolve, reject) => {
-          img.onload = () => resolve();
-          img.onerror = () => reject(new Error("SVG image load failed"));
-        });
-        img.src = url;
-        await imageLoaded;
-        const fallbackCanvas = document.createElement("canvas");
-        fallbackCanvas.width = Math.round(widthPx * scale);
-        fallbackCanvas.height = Math.round(heightPx * scale);
-        const ctx = fallbackCanvas.getContext("2d");
-        if (!ctx) {
-          throw new Error("SVG fallback canvas context missing");
-        }
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(0, 0, fallbackCanvas.width, fallbackCanvas.height);
-        ctx.drawImage(img, 0, 0, fallbackCanvas.width, fallbackCanvas.height);
-        canvas = fallbackCanvas;
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : "svg fallback failed";
-        throw new Error(
-          renderError ? `${renderError.message} / ${detail}` : detail
-        );
-      }
+      const detail = renderError ? renderError.message : "render failed";
+      throw new Error(detail);
     }
     const useJpeg = compressMode !== "none";
     const jpegQuality =
