@@ -308,7 +308,7 @@ async function convertPowerpointToPdfInBrowser(
       img { max-width: none; }
       svg { overflow: visible; }
       .slide-container, .slide { background: #ffffff; }
-      .slide-container, .slide { line-height: 1.2; }
+      .slide-container, .slide { line-height: 1.25; }
       .slide-container, .slide { text-rendering: geometricPrecision; }
     `;
     sandbox.prepend(styleFix);
@@ -335,16 +335,38 @@ async function convertPowerpointToPdfInBrowser(
 
     await waitForAssets(captureTarget);
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    const canvas = await html2canvas(captureTarget, {
-      backgroundColor: "#ffffff",
-      width: widthPx,
-      height: heightPx,
-      scale,
-      useCORS: true,
-      allowTaint: true,
-      foreignObjectRendering: false,
-      imageTimeout: 5000
-    });
+    const renderSlide = async (useForeignObject: boolean) =>
+      html2canvas(captureTarget, {
+        backgroundColor: "#ffffff",
+        width: widthPx,
+        height: heightPx,
+        scale,
+        useCORS: true,
+        allowTaint: true,
+        foreignObjectRendering: useForeignObject,
+        imageTimeout: 5000
+      });
+
+    const isMostlyWhite = (canvas: HTMLCanvasElement) => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return false;
+      const sample = ctx.getImageData(0, 0, Math.min(120, canvas.width), Math.min(120, canvas.height));
+      let white = 0;
+      const total = sample.data.length / 4;
+      for (let i = 0; i < sample.data.length; i += 4) {
+        const r = sample.data[i];
+        const g = sample.data[i + 1];
+        const b = sample.data[i + 2];
+        const a = sample.data[i + 3];
+        if (a > 0 && r > 245 && g > 245 && b > 245) white += 1;
+      }
+      return white / total > 0.97;
+    };
+
+    let canvas = await renderSlide(false);
+    if (isMostlyWhite(canvas)) {
+      canvas = await renderSlide(true);
+    }
     const useJpeg = compressMode !== "none";
     const jpegQuality =
       compressMode === "high" ? 0.55 : compressMode === "medium" ? 0.7 : 0.85;
