@@ -272,9 +272,7 @@ async function convertPowerpointToPdfInBrowser(
     }
   }
 
-  const keepMetadata = Boolean(options.keepMetadata);
   const quality = String(options.quality || "high");
-  const compressMode = String(options.compressMode || "none");
   const scale =
     quality === "small"
       ? 1
@@ -294,22 +292,6 @@ async function convertPowerpointToPdfInBrowser(
   } catch (error) {
     const detail = error instanceof Error ? error.message : "pptx-to-html failed";
     throw new Error(`PPTX parse failed: ${detail}`);
-  }
-
-  const doc = await PDFDocument.create();
-  if (keepMetadata) {
-    const coreXml = await zip.file("docProps/core.xml")?.async("string");
-    if (coreXml) {
-      const coreDoc = parser.parseFromString(coreXml, "text/xml");
-      const title = coreDoc.querySelector("dc\\:title,title")?.textContent?.trim();
-      const creator = coreDoc.querySelector("dc\\:creator,creator")?.textContent?.trim();
-      const subject = coreDoc.querySelector("dc\\:subject,subject")?.textContent?.trim();
-      const keywords = coreDoc.querySelector("cp\\:keywords,keywords")?.textContent?.trim();
-      if (title) doc.setTitle(title);
-      if (creator) doc.setAuthor(creator);
-      if (subject) doc.setSubject(subject);
-      if (keywords) doc.setKeywords([keywords]);
-    }
   }
 
   const contentCount = analysis.textCount + analysis.shapeCount + analysis.imageCount;
@@ -362,6 +344,7 @@ async function convertPowerpointToPdfInBrowser(
     analysis.smartArtCount > 0 || analysis.themeCount > 0 || analysis.masterCount > 0
       ? "복잡한 템플릿이 감지되어 레이아웃 유지 모드로 변환되었습니다."
       : "";
+  const renderedImages: File[] = [];
   for (const [index, html] of slidesHtml.entries()) {
     const startProgress = Math.round(15 + (index / totalSlides) * 70);
     onProgress?.(startProgress, `슬라이드 렌더링 ${index + 1}/${totalSlides}`);
@@ -480,29 +463,26 @@ async function convertPowerpointToPdfInBrowser(
       const detail = renderError ? renderError.message : "render failed";
       throw new Error(detail);
     }
-    const useJpeg = compressMode !== "none";
-    const jpegQuality =
-      compressMode === "high" ? 0.55 : compressMode === "medium" ? 0.7 : 0.85;
+    onProgress?.(Math.round(20 + (index / totalSlides) * 70), "PNG 변환");
     const blob = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, useJpeg ? "image/jpeg" : "image/png", jpegQuality)
+      canvas.toBlob(resolve, "image/png")
     );
     if (!blob) continue;
-    const bytes = await blob.arrayBuffer();
-    const image = useJpeg ? await doc.embedJpg(bytes) : await doc.embedPng(bytes);
-    const page = doc.addPage([widthPx, heightPx]);
-    page.drawImage(image, { x: 0, y: 0, width: widthPx, height: heightPx });
+    renderedImages.push(
+      new File([blob], `slide-${index + 1}.png`, { type: "image/png" })
+    );
     const nextProgress = Math.round(15 + ((index + 1) / totalSlides) * 70);
     onProgress?.(nextProgress, `슬라이드 렌더링 ${index + 1}/${totalSlides}`);
   }
 
   stage.remove();
-  if (doc.getPageCount() === 0) {
+  if (renderedImages.length === 0) {
     throw new Error("슬라이드 렌더 결과가 비어 있습니다.");
   }
-  onProgress?.(95, "PDF 저장 중");
-  const bytes = await doc.save();
+  onProgress?.(90, "PDF 생성 중");
+  const pdfBlob = await imagesToPdf(renderedImages);
   return {
-    blob: bytesToBlob(bytes, "application/pdf"),
+    blob: pdfBlob,
     fileName: "powerpoint-browser.pdf",
     notice: templateNotice || undefined
   };
