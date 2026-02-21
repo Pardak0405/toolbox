@@ -187,10 +187,10 @@ export default function ToolClient({ toolSlug }: { toolSlug: string }) {
         },
         { signal: controller.signal }
       );
-      if (tool.id === "powerpoint-to-pdf") {
-        setModeNotice(
-          "브라우저 모드는 일부 폰트/레이아웃이 달라질 수 있습니다."
-        );
+      if (nextResult.notice) {
+        setModeNotice(nextResult.notice);
+      } else if (tool.id === "powerpoint-to-pdf") {
+        setModeNotice("브라우저 모드는 일부 폰트/레이아웃이 달라질 수 있습니다.");
       } else {
         setModeNotice("");
       }

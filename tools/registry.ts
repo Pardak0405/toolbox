@@ -61,6 +61,7 @@ export type ToolOptionField = {
 export type ToolResult = {
   blob: Blob;
   fileName: string;
+  notice?: string;
 };
 
 export type ToolFaqItem = {
@@ -196,6 +197,63 @@ async function extractXmlTexts(zip: JSZip, names: string[], tagSelector: string)
   return lines;
 }
 
+type PptxAnalysis = {
+  slideNames: string[];
+  masterCount: number;
+  layoutCount: number;
+  themeCount: number;
+  textCount: number;
+  shapeCount: number;
+  imageCount: number;
+  smartArtCount: number;
+  relMissing: number;
+};
+
+async function analyzePptxStructure(zip: JSZip): Promise<PptxAnalysis> {
+  const parser = new DOMParser();
+  const slideNames = sortOfficeEntries(Object.keys(zip.files), "ppt/slides/slide");
+  const masterNames = sortOfficeEntries(Object.keys(zip.files), "ppt/slideMasters/slideMaster");
+  const layoutNames = sortOfficeEntries(Object.keys(zip.files), "ppt/slideLayouts/slideLayout");
+  const themeNames = Object.keys(zip.files).filter((name) =>
+    name.startsWith("ppt/theme/")
+  );
+  let textCount = 0;
+  let shapeCount = 0;
+  let imageCount = 0;
+  let smartArtCount = 0;
+  let relMissing = 0;
+
+  for (const name of slideNames) {
+    const xml = await zip.file(name)?.async("string");
+    if (!xml) continue;
+    const doc = parser.parseFromString(xml, "text/xml");
+    textCount += doc.querySelectorAll("a\\:t,t").length;
+    shapeCount += doc.querySelectorAll("p\\:sp,sp,a\\:custGeom,a\\:prstGeom").length;
+    imageCount += doc.querySelectorAll("a\\:blip,blip,p\\:pic,pic").length;
+    smartArtCount += doc.querySelectorAll("dgm\\:relIds,relIds,a\\:graphicData").length;
+    const relPath = name.replace("slides/", "slides/_rels/") + ".rels";
+    if (!zip.file(relPath)) relMissing += 1;
+  }
+
+  return {
+    slideNames,
+    masterCount: masterNames.length,
+    layoutCount: layoutNames.length,
+    themeCount: themeNames.length,
+    textCount,
+    shapeCount,
+    imageCount,
+    smartArtCount,
+    relMissing
+  };
+}
+
+function shouldFallbackToImage(resultSize: number, analysis: PptxAnalysis) {
+  if (resultSize > 20000) return false;
+  const contentCount = analysis.textCount + analysis.shapeCount + analysis.imageCount;
+  return contentCount === 0 || resultSize < 20000;
+}
+
 async function convertPowerpointToPdfInBrowser(
   file: File,
   options: Record<string, unknown> = {},
@@ -205,6 +263,7 @@ async function convertPowerpointToPdfInBrowser(
   const html2canvas = (await import("html2canvas")).default;
   const zip = await JSZip.loadAsync(await file.arrayBuffer());
   const parser = new DOMParser();
+  const analysis = await analyzePptxStructure(zip);
   const presentationXml = await zip.file("ppt/presentation.xml")?.async("string");
   let widthPx = 960;
   let heightPx = 540;
@@ -259,6 +318,60 @@ async function convertPowerpointToPdfInBrowser(
     }
   }
 
+  const contentCount = analysis.textCount + analysis.shapeCount + analysis.imageCount;
+  if (contentCount === 0) {
+    return buildTextFallbackPdf(
+      "템플릿 구성 요소를 감지했으나 슬라이드 요소를 해석하지 못해 텍스트 중심 안전 모드로 변환되었습니다."
+    );
+  }
+
+  const buildTextFallbackPdf = async (notice: string): Promise<ToolResult> => {
+    const linesBySlide: string[][] = [];
+    for (const slideName of analysis.slideNames) {
+      const xml = await zip.file(slideName)?.async("string");
+      if (!xml) continue;
+      const slideDoc = parser.parseFromString(xml, "text/xml");
+      const lines = Array.from(slideDoc.querySelectorAll("a\\:t,t"))
+        .map((node) => (node.textContent || "").trim())
+        .filter(Boolean)
+        .slice(0, 140);
+      linesBySlide.push(lines);
+    }
+    if (linesBySlide.length === 0) {
+      linesBySlide.push(["No readable text found in this slide."]);
+    }
+    const fallbackDoc = await PDFDocument.create();
+    const font = await fallbackDoc.embedFont(StandardFonts.Helvetica);
+    for (const [index, lines] of linesBySlide.entries()) {
+      const page = fallbackDoc.addPage([widthPx, heightPx]);
+      page.drawText(`Slide ${index + 1}`, {
+        x: 36,
+        y: heightPx - 36,
+        size: 12,
+        font,
+        color: rgb(0.2, 0.2, 0.2)
+      });
+      let y = heightPx - 60;
+      for (const line of lines) {
+        if (y < 36) break;
+        page.drawText(toWinAnsiSafe(line).slice(0, 140), {
+          x: 36,
+          y,
+          size: 10,
+          font,
+          color: rgb(0.15, 0.15, 0.15)
+        });
+        y -= 14;
+      }
+    }
+    const bytes = await fallbackDoc.save();
+    return {
+      blob: bytesToBlob(bytes, "application/pdf"),
+      fileName: "powerpoint-fallback.pdf",
+      notice
+    };
+  };
+
   const stage = document.createElement("div");
   stage.style.position = "absolute";
   stage.style.left = "0";
@@ -298,6 +411,10 @@ async function convertPowerpointToPdfInBrowser(
   };
 
   const totalSlides = Math.max(1, slidesHtml.length);
+  const templateNotice =
+    analysis.smartArtCount > 0 || analysis.themeCount > 0 || analysis.masterCount > 0
+      ? "복잡한 템플릿이 감지되어 레이아웃 유지 모드로 변환되었습니다."
+      : "";
   for (const [index, html] of slidesHtml.entries()) {
     const startProgress = Math.round(15 + (index / totalSlides) * 70);
     onProgress?.(startProgress, `슬라이드 렌더링 ${index + 1}/${totalSlides}`);
@@ -433,12 +550,22 @@ async function convertPowerpointToPdfInBrowser(
 
   stage.remove();
   if (doc.getPageCount() === 0) {
-    return textPdfFromLines("PowerPoint to PDF (Browser Render Mode)", [
-      "No readable slide data found. Try smaller files or check PPTX integrity."
-    ]);
+    return buildTextFallbackPdf(
+      "슬라이드 렌더가 비어 있어 텍스트 중심 안전 모드로 변환되었습니다."
+    );
   }
   onProgress?.(95, "PDF 저장 중");
-  return bytesToBlob(await doc.save(), "application/pdf");
+  const bytes = await doc.save();
+  if (shouldFallbackToImage(bytes.length, analysis)) {
+    return buildTextFallbackPdf(
+      "템플릿 구성 요소가 감지되어 텍스트 중심 안전 모드로 변환되었습니다."
+    );
+  }
+  return {
+    blob: bytesToBlob(bytes, "application/pdf"),
+    fileName: "powerpoint-browser.pdf",
+    notice: templateNotice || undefined
+  };
 }
 
 async function convertWordToPdfInBrowser(file: File) {
@@ -863,10 +990,8 @@ export const toolsRegistry: ToolDefinition[] = [
     ],
     engine: "browser",
     icon: FileType2,
-    runBrowser: async (files, options, onProgress) => ({
-      blob: await convertPowerpointToPdfInBrowser(files[0], options, onProgress),
-      fileName: "powerpoint-browser.pdf"
-    }),
+    runBrowser: async (files, options, onProgress) =>
+      convertPowerpointToPdfInBrowser(files[0], options, onProgress),
     // browser-only
   },
   {
