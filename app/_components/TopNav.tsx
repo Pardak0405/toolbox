@@ -27,9 +27,9 @@ export default function TopNav() {
             <Image
               src="/logo.png"
               alt="Toolbox 로고"
-              width={320}
-              height={72}
-              className="h-10 md:h-12 w-auto max-w-[220px] md:max-w-[280px]"
+              width={360}
+              height={80}
+              className="h-10 md:h-12 w-auto max-w-[260px] md:max-w-[320px]"
               priority
             />
             <div className="hidden sm:block">
