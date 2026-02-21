@@ -26,7 +26,7 @@ export default function ResultPanel({
         <a
           href={downloadUrl}
           download={safeFileName}
-          className="inline-flex items-center gap-2 rounded-full bg-ember px-5 py-2 text-sm font-semibold text-white"
+          className="btn-primary inline-flex items-center gap-2 rounded-full px-5 py-2 text-sm font-semibold"
         >
           <DownloadCloud className="h-4 w-4" /> Download
         </a>
