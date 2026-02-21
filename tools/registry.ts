@@ -232,7 +232,8 @@ async function convertPowerpointToPdfInBrowser(
   const slidesHtml = await pptxToHtml(await file.arrayBuffer(), {
     width: widthPx,
     height: heightPx,
-    scaleToFit: true,
+    scaleToFit: false,
+    letterbox: false,
     domParserFactory: () => new DOMParser()
   });
 
@@ -299,27 +300,31 @@ async function convertPowerpointToPdfInBrowser(
     sandbox.style.background = "#ffffff";
     sandbox.style.position = "relative";
     sandbox.style.transformOrigin = "top left";
-    const htmlDoc = parser.parseFromString(html, "text/html");
-    htmlDoc.querySelectorAll("script,iframe,object,embed,link").forEach((node) => {
+    sandbox.style.fontFamily =
+      "Noto Sans KR, Apple SD Gothic Neo, Malgun Gothic, Segoe UI, sans-serif";
+    sandbox.innerHTML = html;
+    sandbox.querySelectorAll("script,iframe,object,embed,link").forEach((node) => {
       node.remove();
     });
-    const styleText = Array.from(htmlDoc.querySelectorAll("style"))
-      .map((style) => style.textContent || "")
-      .join("\n");
-    if (styleText.trim()) {
-      const styleEl = document.createElement("style");
-      styleEl.textContent = styleText;
-      sandbox.appendChild(styleEl);
-    }
-    const contentWrapper = document.createElement("div");
-    contentWrapper.innerHTML = htmlDoc.body?.innerHTML || html;
-    sandbox.appendChild(contentWrapper);
+    const slideRoot = sandbox.firstElementChild as HTMLElement | null;
+    const innerSlide =
+      slideRoot?.classList.contains("slide-container")
+        ? (slideRoot.querySelector(".slide") as HTMLElement | null)
+        : null;
+    const captureTarget = innerSlide ?? slideRoot ?? sandbox;
+    captureTarget.querySelectorAll("img").forEach((img) => {
+      img.loading = "eager";
+      img.decoding = "sync";
+    });
+    captureTarget.style.width = `${widthPx}px`;
+    captureTarget.style.height = `${heightPx}px`;
+
     stage.innerHTML = "";
     stage.appendChild(sandbox);
 
-    await waitForAssets(sandbox);
+    await waitForAssets(captureTarget);
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-    const canvas = await html2canvas(sandbox, {
+    const canvas = await html2canvas(captureTarget, {
       backgroundColor: "#ffffff",
       scale,
       useCORS: true,
