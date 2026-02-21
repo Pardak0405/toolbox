@@ -335,6 +335,42 @@ async function extractPicturesFromXml(
   return results;
 }
 
+async function extractShapesFromXml(
+  xml: string,
+  parser: DOMParser,
+  themeColors: Record<string, string>
+) {
+  const doc = parser.parseFromString(xml, "text/xml");
+  const shapes = Array.from(doc.querySelectorAll("p\\:sp,sp"));
+  const results: {
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+    color: string | null;
+    text: string;
+    shapeType: string;
+  }[] = [];
+  for (const shape of shapes) {
+    const xfrm = shape.querySelector("a\\:xfrm,xfrm");
+    const off = xfrm?.querySelector("a\\:off,off");
+    const ext = xfrm?.querySelector("a\\:ext,ext");
+    const x = emuToPx(off?.getAttribute("x"));
+    const y = emuToPx(off?.getAttribute("y"));
+    const w = emuToPx(ext?.getAttribute("cx"));
+    const h = emuToPx(ext?.getAttribute("cy"));
+    if (w <= 0 || h <= 0) continue;
+    const prst = shape.querySelector("a\\:prstGeom,prstGeom");
+    const shapeType = prst?.getAttribute("prst") || "rect";
+    const solidFill = shape.querySelector("a\\:solidFill,solidFill");
+    const color = resolveSchemeColor(solidFill as Element | null, themeColors);
+    const textNodes = Array.from(shape.querySelectorAll("a\\:t,t"));
+    const text = textNodes.map((node) => node.textContent || "").join(" ").trim();
+    results.push({ x, y, w, h, color, text, shapeType });
+  }
+  return results;
+}
+
 async function renderSlideFallbackCanvas(
   zip: JSZip,
   slideName: string,
@@ -344,6 +380,7 @@ async function renderSlideFallbackCanvas(
   scale: number,
   bgInfo: BackgroundInfo | null
 ) {
+  const themeColors = await loadThemeColors(zip, parser);
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(widthPx * scale);
   canvas.height = Math.round(heightPx * scale);
@@ -372,8 +409,10 @@ async function renderSlideFallbackCanvas(
   const slideBaseDir = slideName.split("/").slice(0, -1).join("/");
   const slideRels = await getRelsMap(zip, slideRelsPath);
   const slidePics = await extractPicturesFromXml(slideXml, slideRels, slideBaseDir, zip);
+  const slideShapes = await extractShapesFromXml(slideXml, parser, themeColors);
 
   const layoutPics: typeof slidePics = [];
+  const layoutShapes: typeof slideShapes = [];
   const slideRelsXml = await zip.file(slideRelsPath)?.async("string");
   if (slideRelsXml) {
     const relsDoc = parser.parseFromString(slideRelsXml, "text/xml");
@@ -391,7 +430,34 @@ async function renderSlideFallbackCanvas(
         layoutPics.push(
           ...(await extractPicturesFromXml(layoutXml, layoutRels, layoutBaseDir, zip))
         );
+        layoutShapes.push(...(await extractShapesFromXml(layoutXml, parser, themeColors)));
       }
+    }
+  }
+
+  for (const shape of [...layoutShapes, ...slideShapes]) {
+    if (!shape.color) continue;
+    ctx.fillStyle = shape.color;
+    if (shape.shapeType === "ellipse") {
+      ctx.beginPath();
+      ctx.ellipse(
+        shape.x + shape.w / 2,
+        shape.y + shape.h / 2,
+        shape.w / 2,
+        shape.h / 2,
+        0,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+    } else {
+      ctx.fillRect(shape.x, shape.y, shape.w, shape.h);
+    }
+    if (shape.text) {
+      ctx.fillStyle = "#111111";
+      ctx.font = "16px sans-serif";
+      ctx.textBaseline = "top";
+      ctx.fillText(shape.text.slice(0, 120), shape.x + 8, shape.y + 8, shape.w - 16);
     }
   }
 
