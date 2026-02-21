@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -22,12 +23,16 @@ export default function TopNav() {
     <header className="sticky top-0 z-30 border-b border-line bg-white/80 backdrop-blur">
       <div className="px-5 md:px-10 lg:px-16 py-4 flex flex-col gap-3">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <Link href="/" className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-ember text-white flex items-center justify-center font-bold">
-              TB
-            </div>
-            <div>
-              <p className="font-display text-xl">{BRAND.name}</p>
+          <Link href="/" aria-label="Toolbox 홈으로 이동" className="flex items-center gap-3">
+            <Image
+              src="/logo.png"
+              alt="Toolbox 로고"
+              width={240}
+              height={60}
+              className="h-8 md:h-10 w-auto"
+              priority
+            />
+            <div className="hidden sm:block">
               <p className="text-xs text-muted">{BRAND.slogan}</p>
             </div>
           </Link>
