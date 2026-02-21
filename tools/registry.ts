@@ -261,6 +261,30 @@ async function convertPowerpointToPdfInBrowser(
   stage.style.overflow = "hidden";
   document.body.appendChild(stage);
 
+  const waitForAssets = async (container: HTMLElement, timeoutMs = 7000) => {
+    const images = Array.from(container.querySelectorAll("img"));
+    images.forEach((img) => {
+      if (!img.getAttribute("crossorigin")) {
+        img.setAttribute("crossorigin", "anonymous");
+      }
+    });
+    const imagePromises = images.map(
+      (img) =>
+        new Promise<void>((resolve) => {
+          if (img.complete) return resolve();
+          const done = () => resolve();
+          img.addEventListener("load", done, { once: true });
+          img.addEventListener("error", done, { once: true });
+        })
+    );
+    const fontPromise =
+      typeof document !== "undefined" && "fonts" in document
+        ? (document as Document & { fonts: FontFaceSet }).fonts.ready
+        : Promise.resolve();
+    const timeout = new Promise<void>((resolve) => setTimeout(resolve, timeoutMs));
+    await Promise.race([Promise.all([...imagePromises, fontPromise]), timeout]);
+  };
+
   for (const html of slidesHtml) {
     const sandbox = document.createElement("div");
     sandbox.style.width = `${widthPx}px`;
@@ -275,10 +299,15 @@ async function convertPowerpointToPdfInBrowser(
     stage.innerHTML = "";
     stage.appendChild(sandbox);
 
+    await waitForAssets(sandbox);
     const canvas = await html2canvas(sandbox, {
       backgroundColor: "#ffffff",
       scale,
-      useCORS: true
+      useCORS: true,
+      allowTaint: true,
+      foreignObjectRendering: true,
+      imageTimeout: 5000,
+      letterRendering: true
     });
     const useJpeg = compressMode !== "none";
     const jpegQuality =
