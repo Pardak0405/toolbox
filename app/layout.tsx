@@ -23,6 +23,11 @@ export const metadata: Metadata = {
   description: BRAND.slogan,
   metadataBase: new URL(getBrandOrigin()),
   manifest: "/manifest.webmanifest",
+  icons: {
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/icon-192.png"
+  },
   openGraph: {
     title: `${BRAND.name} - 무료 문서 툴킷`,
     description: BRAND.slogan,
