@@ -103,17 +103,6 @@ function bytesToBlob(bytes: Uint8Array, type: string) {
   return new Blob([copy], { type });
 }
 
-function dataUrlToBytes(dataUrl: string) {
-  const [meta, base64] = dataUrl.split(",");
-  if (!base64) return new Uint8Array();
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
 async function zipBlobs(blobs: Blob[], baseName: string, extension: string) {
   const zip = new JSZip();
   blobs.forEach((blob, index) => {
@@ -406,33 +395,31 @@ async function convertPowerpointToPdfInBrowser(
 
     if (!canvas || isMostlyWhite(canvas)) {
       try {
-        if (!document?.body) {
-          throw new Error("document body unavailable");
-        }
-        const domToImage = await import("dom-to-image-more");
-        const toPng =
-          (domToImage as unknown as { toPng?: Function }).toPng ||
-          (domToImage as unknown as { default?: { toPng?: Function } }).default?.toPng ||
-          (domToImage as unknown as { default?: Function }).default;
-        if (!toPng) {
-          throw new Error("dom-to-image-more not available");
-        }
-        const dataUrl = await toPng(captureTarget, {
-          cacheBust: true,
-          width: widthPx,
-          height: heightPx,
-          style: { background: "#ffffff" }
+        const clone = captureTarget.cloneNode(true) as HTMLElement;
+        clone.style.width = `${widthPx}px`;
+        clone.style.height = `${heightPx}px`;
+        const serialized = new XMLSerializer().serializeToString(clone);
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}"><foreignObject width="100%" height="100%">${serialized}</foreignObject></svg>`;
+        const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        const imageLoaded = new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error("SVG image load failed"));
         });
-        const bytes = dataUrlToBytes(dataUrl);
-        if (bytes.length === 0) {
-          throw new Error("dom-to-image produced empty data");
+        img.src = url;
+        await imageLoaded;
+        const fallbackCanvas = document.createElement("canvas");
+        fallbackCanvas.width = Math.round(widthPx * scale);
+        fallbackCanvas.height = Math.round(heightPx * scale);
+        const ctx = fallbackCanvas.getContext("2d");
+        if (!ctx) {
+          throw new Error("SVG fallback canvas context missing");
         }
-        const image = await doc.embedPng(bytes);
-        const page = doc.addPage([widthPx, heightPx]);
-        page.drawImage(image, { x: 0, y: 0, width: widthPx, height: heightPx });
-        continue;
+        ctx.drawImage(img, 0, 0, fallbackCanvas.width, fallbackCanvas.height);
+        canvas = fallbackCanvas;
       } catch (error) {
-        const detail = error instanceof Error ? error.message : "dom-to-image failed";
+        const detail = error instanceof Error ? error.message : "svg fallback failed";
         throw new Error(
           renderError ? `${renderError.message} / ${detail}` : detail
         );

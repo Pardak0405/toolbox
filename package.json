@@ -23,7 +23,6 @@
     "@jvmr/pptx-to-html": "^1.0.0",
     "aws4fetch": "^1.0.20",
     "docx": "^8.5.0",
-    "dom-to-image-more": "^3.7.2",
     "file-saver": "^2.0.5",
     "html2canvas": "^1.4.1",
     "jszip": "^3.10.1",
