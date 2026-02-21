@@ -269,7 +269,7 @@ async function convertPowerpointToPdfInBrowser(
   stage.style.opacity = "1";
   stage.style.width = `${widthPx}px`;
   stage.style.height = `${heightPx}px`;
-  stage.style.background = "#ffffff";
+  stage.style.background = "transparent";
   stage.style.overflow = "hidden";
   document.body.appendChild(stage);
 
@@ -315,7 +315,6 @@ async function convertPowerpointToPdfInBrowser(
       * { box-sizing: border-box; }
       img { max-width: none; }
       svg { overflow: visible; }
-      .slide-container, .slide { background: #ffffff; }
       .slide-container, .slide { line-height: 1.25; }
       .slide-container, .slide { text-rendering: geometricPrecision; }
     `;
@@ -330,7 +329,7 @@ async function convertPowerpointToPdfInBrowser(
         : null;
     const captureTarget = innerSlide ?? slideRoot ?? sandbox;
     captureTarget.style.overflow = "visible";
-    captureTarget.style.background = "#ffffff";
+    captureTarget.style.background = "transparent";
     captureTarget.style.visibility = "visible";
     captureTarget.querySelectorAll("img").forEach((img) => {
       img.loading = "eager";
@@ -347,7 +346,7 @@ async function convertPowerpointToPdfInBrowser(
     const renderSlide = async (useForeignObject: boolean) => {
       try {
         return await html2canvas(captureTarget, {
-          backgroundColor: "#ffffff",
+          backgroundColor: null,
           width: widthPx,
           height: heightPx,
           scale,
@@ -362,22 +361,6 @@ async function convertPowerpointToPdfInBrowser(
       }
     };
 
-    const isMostlyWhite = (canvas: HTMLCanvasElement) => {
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return false;
-      const sample = ctx.getImageData(0, 0, Math.min(120, canvas.width), Math.min(120, canvas.height));
-      let white = 0;
-      const total = sample.data.length / 4;
-      for (let i = 0; i < sample.data.length; i += 4) {
-        const r = sample.data[i];
-        const g = sample.data[i + 1];
-        const b = sample.data[i + 2];
-        const a = sample.data[i + 3];
-        if (a > 0 && r > 245 && g > 245 && b > 245) white += 1;
-      }
-      return white / total > 0.97;
-    };
-
     let canvas: HTMLCanvasElement | null = null;
     let renderError: Error | null = null;
     try {
@@ -385,7 +368,7 @@ async function convertPowerpointToPdfInBrowser(
     } catch (error) {
       renderError = error as Error;
     }
-    if (!canvas || isMostlyWhite(canvas)) {
+    if (!canvas) {
       try {
         canvas = await renderSlide(true);
       } catch (error) {
@@ -393,7 +376,7 @@ async function convertPowerpointToPdfInBrowser(
       }
     }
 
-    if (!canvas || isMostlyWhite(canvas)) {
+    if (!canvas) {
       try {
         const clone = captureTarget.cloneNode(true) as HTMLElement;
         clone.style.width = `${widthPx}px`;
@@ -416,6 +399,8 @@ async function convertPowerpointToPdfInBrowser(
         if (!ctx) {
           throw new Error("SVG fallback canvas context missing");
         }
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, fallbackCanvas.width, fallbackCanvas.height);
         ctx.drawImage(img, 0, 0, fallbackCanvas.width, fallbackCanvas.height);
         canvas = fallbackCanvas;
       } catch (error) {
