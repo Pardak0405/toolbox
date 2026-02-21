@@ -299,7 +299,17 @@ async function convertPowerpointToPdfInBrowser(
     htmlDoc.querySelectorAll("script,iframe,object,embed,link").forEach((node) => {
       node.remove();
     });
-    sandbox.innerHTML = htmlDoc.body?.innerHTML || html;
+    const styleText = Array.from(htmlDoc.querySelectorAll("style"))
+      .map((style) => style.textContent || "")
+      .join("\n");
+    if (styleText.trim()) {
+      const styleEl = document.createElement("style");
+      styleEl.textContent = styleText;
+      sandbox.appendChild(styleEl);
+    }
+    const contentWrapper = document.createElement("div");
+    contentWrapper.innerHTML = htmlDoc.body?.innerHTML || html;
+    sandbox.appendChild(contentWrapper);
     stage.innerHTML = "";
     stage.appendChild(sandbox);
 
