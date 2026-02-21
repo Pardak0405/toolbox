@@ -19,7 +19,7 @@ const sora = Sora({
 });
 
 export const metadata: Metadata = {
-  title: `${BRAND.name} - 무료 문서 툴킷`,
+  title: `${BRAND.name} - 무료 문서 변환기`,
   description: BRAND.slogan,
   metadataBase: new URL(getBrandOrigin()),
   manifest: "/manifest.webmanifest",
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     apple: "/icon-192.png"
   },
   openGraph: {
-    title: `${BRAND.name} - 무료 문서 툴킷`,
+    title: `${BRAND.name} - 무료 문서 변환기`,
     description: BRAND.slogan,
     images: ["/og-placeholder.svg"]
   }

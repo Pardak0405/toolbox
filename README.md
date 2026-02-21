@@ -1,6 +1,6 @@
 # toolbox
 
-업로드 없이 빠르게, 내 PC에서 처리하는 문서 툴킷.
+업로드 없이 빠르게, 내 PC에서 처리하는 문서 변환기.
 
 ## Stack
 - Next.js (App Router) + TypeScript

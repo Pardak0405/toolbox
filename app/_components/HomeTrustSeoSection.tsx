@@ -56,7 +56,7 @@ export default function HomeTrustSeoSection() {
       <div className="mx-auto max-w-5xl space-y-8">
         <div className="space-y-3">
           <h2 id="home-trust-title" className="font-display text-2xl md:text-3xl">
-            업로드 없이, 내 PC에서 처리되는 문서 툴킷
+            업로드 없이, 내 PC에서 처리되는 문서 변환기
           </h2>
           <p className="text-sm text-muted md:text-base">
             AllToolbox는 파일을 서버에 올리지 않고(기본 모드), 브라우저에서 바로 변환·편집을 수행하는 무료 문서 도구 모음입니다. 민감한 문서도 안심하고 처리할 수 있도록, 가능한 기능은 사용자의 기기에서 실행되도록 설계했습니다.
