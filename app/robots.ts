@@ -1,10 +1,10 @@
 import type { MetadataRoute } from "next";
-import { getBrandOrigin } from "@/config/brand";
+import { SITE_URL } from "@/config/site";
 
 export const dynamic = "force-static";
 
 export default function robots(): MetadataRoute.Robots {
-  const base = getBrandOrigin();
+  const base = SITE_URL;
   return {
     rules: {
       userAgent: "*",

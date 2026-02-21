@@ -1,11 +1,11 @@
 import { allTools } from "@/tools/registry";
 import type { MetadataRoute } from "next";
-import { getBrandOrigin } from "@/config/brand";
+import { SITE_URL } from "@/config/site";
 
 export const dynamic = "force-static";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const base = getBrandOrigin();
+  const base = SITE_URL;
   const staticPages = [
     "",
     "/workflows",
