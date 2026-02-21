@@ -626,26 +626,10 @@ export const toolsRegistry: ToolDefinition[] = [
   {
     id: "jpg-to-pdf",
     slug: "jpg-to-pdf",
-    title: "JPG to PDF",
-    description: "Convert JPG images into a PDF.",
+    title: "JPG or PNG to PDF",
+    description: "Convert JPG or PNG images into a PDF.",
     category: "Convert to PDF",
-    inputTypes: ["jpg", "jpeg"],
-    outputTypes: ["pdf"],
-    optionsSchema: [],
-    engine: "browser",
-    icon: ImageIcon,
-    runBrowser: async (files) => ({
-      blob: await imagesToPdf(files),
-      fileName: "images.pdf"
-    })
-  },
-  {
-    id: "png-to-pdf",
-    slug: "png-to-pdf",
-    title: "PNG to PDF",
-    description: "Convert PNG images into a PDF.",
-    category: "Convert to PDF",
-    inputTypes: ["png"],
+    inputTypes: ["jpg", "jpeg", "png"],
     outputTypes: ["pdf"],
     optionsSchema: [],
     engine: "browser",
