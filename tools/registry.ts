@@ -209,6 +209,55 @@ async function inlinePptxMedia(html: string, zip: JSZip) {
   return output;
 }
 
+function resolveRelTarget(baseDir: string, target: string) {
+  if (target.startsWith("/")) {
+    return target.replace(/^\/+/, "");
+  }
+  const stack = baseDir.split("/");
+  const parts = target.split("/");
+  for (const part of parts) {
+    if (part === "..") {
+      stack.pop();
+      continue;
+    }
+    if (part === ".") continue;
+    stack.push(part);
+  }
+  return stack.join("/");
+}
+
+async function getSlideBackgroundDataUrl(
+  zip: JSZip,
+  slideName: string,
+  parser: DOMParser
+) {
+  const xml = await zip.file(slideName)?.async("string");
+  if (!xml) return null;
+  const slideDoc = parser.parseFromString(xml, "text/xml");
+  const blip =
+    slideDoc.querySelector("p\\:bg a\\:blip, bg a\\:blip") ||
+    slideDoc.querySelector("p\\:bgRef a\\:blip, bgRef a\\:blip");
+  if (!blip) return null;
+  const rId = blip.getAttribute("r:embed") || blip.getAttribute("embed");
+  if (!rId) return null;
+  const relsPath = slideName.replace("slides/", "slides/_rels/") + ".rels";
+  const relsXml = await zip.file(relsPath)?.async("string");
+  if (!relsXml) return null;
+  const relsDoc = parser.parseFromString(relsXml, "text/xml");
+  const rel = Array.from(relsDoc.getElementsByTagName("Relationship")).find(
+    (node) => node.getAttribute("Id") === rId
+  );
+  const target = rel?.getAttribute("Target");
+  if (!target) return null;
+  const baseDir = slideName.split("/").slice(0, -1).join("/");
+  const resolved = resolveRelTarget(baseDir, target);
+  const file = zip.file(resolved);
+  if (!file) return null;
+  const base64 = await file.async("base64");
+  const mime = guessMimeType(resolved);
+  return `data:${mime};base64,${base64}`;
+}
+
 async function extractXmlTexts(zip: JSZip, names: string[], tagSelector: string) {
   const parser = new DOMParser();
   const lines: string[] = [];
@@ -378,10 +427,14 @@ async function convertPowerpointToPdfInBrowser(
     const startProgress = Math.round(15 + (index / totalSlides) * 70);
     onProgress?.(startProgress, `슬라이드 렌더링 ${index + 1}/${totalSlides}`);
     const hydratedHtml = await inlinePptxMedia(html, zip);
+    const slideName = analysis.slideNames[index];
+    const bgDataUrl = slideName ? await getSlideBackgroundDataUrl(zip, slideName, parser) : null;
     const sandbox = document.createElement("div");
     sandbox.style.width = `${widthPx}px`;
     sandbox.style.height = `${heightPx}px`;
-    sandbox.style.background = "#ffffff";
+    sandbox.style.background = bgDataUrl
+      ? `url('${bgDataUrl}') center / cover no-repeat`
+      : "#ffffff";
     sandbox.style.position = "relative";
     sandbox.style.transformOrigin = "top left";
     sandbox.style.fontFamily =
@@ -427,7 +480,11 @@ async function convertPowerpointToPdfInBrowser(
           '<$1 xmlns="http://www.w3.org/1999/xhtml"'
         );
       }
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}"><foreignObject width="100%" height="100%">${serialized}</foreignObject></svg>`;
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${widthPx}" height="${heightPx}">
+        <rect width="100%" height="100%" fill="#ffffff"></rect>
+        ${bgDataUrl ? `<image href="${bgDataUrl}" x="0" y="0" width="100%" height="100%" preserveAspectRatio="xMidYMid slice"></image>` : ""}
+        <foreignObject width="100%" height="100%">${serialized}</foreignObject>
+      </svg>`;
       const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
       const img = new Image();
       img.crossOrigin = "anonymous";
